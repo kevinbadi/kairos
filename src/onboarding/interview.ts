@@ -115,25 +115,14 @@ export async function runInterview(root: string = process.cwd()): Promise<Interv
 
 async function stepMode(state: InterviewState): Promise<void> {
   const mode = await select({
-    message: 'Question #1 — who am I working for?',
+    message: 'Creator or agency?',
     choices: [
-      {
-        name: 'Creator — this is my own brand',
-        value: 'creator' as const,
-      },
-      {
-        name: 'Agency — I run socials for client brands',
-        value: 'agency' as const,
-      },
+      { name: 'Creator', value: 'creator' as const },
+      { name: 'Agency', value: 'agency' as const },
     ],
   });
   state.answers.mode = mode;
   markStepDone(state, 'mode');
-  say(
-    mode === 'agency'
-      ? "Agency it is. Each client brand has its own CreatorOS API key (their app → Settings → API Key) — we'll collect them next and set up your first client now. Each additional client gets its own Kairos workspace folder later."
-      : 'Creator — perfect, one brand, full focus.',
-  );
 }
 
 /** Collect and validate one key on a loop until it passes shape + live check. */
@@ -158,22 +147,29 @@ async function collectValidKey(promptMessage: string): Promise<{ key: string; cl
   }
 }
 
-/** Creator: one key. Agency: one key per client brand, pick who we set up now. */
+const MAX_AGENCY_KEYS = 10;
+const GET_KEY_URL = 'https://creatoros.ca';
+
+/** Creator: one key. Agency: up to 10 keys, pick who we set up now. */
 async function collectKeysInteractively(state: InterviewState): Promise<CreatorOSClient> {
+  const plural = state.answers.mode === 'agency' ? '(s)' : '';
+  const hasKeys = await confirm({
+    message: `Do you have your CreatorOS API key${plural}?`,
+    default: true,
+  });
+  if (!hasKeys) {
+    say(`Get it at ${GET_KEY_URL} — then run me again and we pick up right here.`);
+    process.exit(0);
+  }
+
   if (state.answers.mode !== 'agency') {
-    say(
-      'Your CreatorOS API key — grab it from the CreatorOS iOS app → Settings → API Key (it starts with sk_).',
-    );
     const { key, client } = await collectValidKey('Paste your CreatorOS API key:');
     await saveApiKey(key);
     return client;
   }
 
-  say(
-    "Client keys — one per brand, from each client's CreatorOS app → Settings → API Key. Paste them one at a time; I'll validate each.",
-  );
   const collected: Array<{ label: string; apiKey: string; client: CreatorOSClient }> = [];
-  while (true) {
+  while (collected.length < MAX_AGENCY_KEYS) {
     const label = (
       await input({
         message: `Client ${collected.length + 1} name:`,
@@ -182,7 +178,14 @@ async function collectKeysInteractively(state: InterviewState): Promise<CreatorO
     ).trim();
     const { key, client } = await collectValidKey(`CreatorOS API key for ${label}:`);
     collected.push({ label, apiKey: key, client });
-    const more = await confirm({ message: 'Add another client key?', default: false });
+    if (collected.length === MAX_AGENCY_KEYS) {
+      say(`That's ${MAX_AGENCY_KEYS} — the max per setup.`);
+      break;
+    }
+    const more = await confirm({
+      message: `Add another client key? (${collected.length}/${MAX_AGENCY_KEYS})`,
+      default: false,
+    });
     if (!more) break;
   }
 
