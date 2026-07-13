@@ -47,6 +47,12 @@ async function main(): Promise<void> {
     existsSync(paths.kairosDir) && existsSync(paths.configJson) && isInterviewComplete(state);
 
   if (!setupDone) {
+    // First run: CreatorOS animation → Kairos animation → capability
+    // checkmarks → the interview. Resumed interviews skip the show.
+    if (state.completed.length === 0) {
+      const { showIntro } = await import('./ui/banner.js');
+      await showIntro();
+    }
     const { runInterview } = await import('./onboarding/interview.js');
     const { client, config } = await runInterview(paths.root);
     const { runRepl } = await import('./agent/repl.js');
