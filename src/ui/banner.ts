@@ -107,32 +107,52 @@ function paintFrame(
   return out.join('\n');
 }
 
+async function animateBlock(rows: string[], stops: Rgb[]): Promise<void> {
+  const stdout = process.stdout;
+  const width = [...(rows[0] ?? '')].length;
+  const REVEAL_FRAMES = 18;
+  const SHIMMER_FRAMES = 14;
+  let first = true;
+  for (let f = 0; f < REVEAL_FRAMES + SHIMMER_FRAMES; f++) {
+    const progress = Math.min(1, f / (REVEAL_FRAMES - 1));
+    const eased = 1 - (1 - progress) ** 3;
+    const revealCols = Math.ceil(eased * width);
+    const hueOffset = f * 0.045;
+    if (!first) stdout.write(`\x1b[${ROWS}A`); // cursor back to frame top
+    stdout.write(paintFrame(rows, width, revealCols, hueOffset, stops) + '\n');
+    first = false;
+    await sleep(f < REVEAL_FRAMES ? 32 : 45);
+  }
+}
+
 /** Left-to-right reveal with a bright leading edge, then a shimmer sweep. */
 export async function showWordmark(text: string, tagline: string, stops: Rgb[]): Promise<void> {
-  const rows = renderRows(text);
-  const width = [...(rows[0] ?? '')].length;
   const stdout = process.stdout;
   // columns can be 0/undefined on some ptys — assume a modern wide terminal then
-  const fancy = isFancy() && (stdout.columns || 120) >= width + 2;
-  if (!fancy) {
+  const columns = stdout.columns || 120;
+  const fullRows = renderRows(text);
+  const fullWidth = [...(fullRows[0] ?? '')].length;
+
+  // Narrow terminal (e.g. default 80-col window vs the 78-col CREATOR OS
+  // mark): animate the words stacked instead of dropping the show entirely.
+  let blocks: string[][] = [fullRows];
+  let width = fullWidth;
+  if (isFancy() && columns < fullWidth + 2 && text.includes(' ')) {
+    const wordRows = text.split(' ').map((word) => renderRows(word));
+    width = Math.max(...wordRows.map((rows) => [...(rows[0] ?? '')].length));
+    blocks = wordRows;
+  }
+
+  if (!isFancy() || columns < width + 2) {
     console.log(`${text} — ${tagline}`);
     return;
   }
+
   const centeredTagline = ' '.repeat(Math.max(0, Math.floor((width - tagline.length) / 2))) + tagline;
   stdout.write('\x1b[?25l\n'); // hide cursor
   try {
-    const REVEAL_FRAMES = 18;
-    const SHIMMER_FRAMES = 14;
-    let first = true;
-    for (let f = 0; f < REVEAL_FRAMES + SHIMMER_FRAMES; f++) {
-      const progress = Math.min(1, f / (REVEAL_FRAMES - 1));
-      const eased = 1 - (1 - progress) ** 3;
-      const revealCols = Math.ceil(eased * width);
-      const hueOffset = f * 0.045;
-      if (!first) stdout.write(`\x1b[${ROWS}A`); // cursor back to frame top
-      stdout.write(paintFrame(rows, width, revealCols, hueOffset, stops) + '\n');
-      first = false;
-      await sleep(f < REVEAL_FRAMES ? 32 : 45);
+    for (const rows of blocks) {
+      await animateBlock(rows, stops);
     }
     stdout.write(`\x1b[2m\x1b[3m${centeredTagline}${RESET}\n\n`);
   } finally {
@@ -159,7 +179,7 @@ export const KAIROS_CAPABILITY_SECTIONS: ChecklistSection[] = [
       { name: 'Longform video', detail: 'YouTube — title, description, tags' },
       { name: 'Carousels', detail: 'multi-media posts' },
       { name: 'Single post / blog-style text', detail: 'every text platform' },
-      { name: 'Threads / tweets', detail: 'native multi-part threads on X, Threads & Bluesky' },
+      { name: 'Threads / tweets', detail: 'native multi-part threads on X & Threads' },
       { name: 'Multiposting', detail: 'one create, every account at once' },
       { name: 'Scheduling', detail: 'CreatorOS servers publish — your laptop can sleep' },
     ],

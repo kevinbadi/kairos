@@ -52,5 +52,51 @@ describe('first-run intro', () => {
     expect(text).toContain('tutorials');
     // branding
     expect(text).not.toMatch(/zernio/i);
+    // not in this version
+    expect(text).not.toMatch(/bluesky/i);
   });
+});
+
+describe('narrow terminals still get the CreatorOS animation', () => {
+  it('stacks the words instead of dropping to plain text at 60 columns', async () => {
+    const { showWordmark } = await import('../src/ui/banner.js');
+    const stdout = process.stdout as unknown as { isTTY: boolean; columns: number };
+    const saved = {
+      isTTY: stdout.isTTY,
+      columns: stdout.columns,
+      ci: process.env.CI,
+      noColor: process.env.NO_COLOR,
+    };
+    const writes: string[] = [];
+    const writeSpy = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation(((chunk: unknown) => {
+        writes.push(String(chunk));
+        return true;
+      }) as typeof process.stdout.write);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      stdout.isTTY = true;
+      stdout.columns = 60; // narrower than the 78-col CREATOR OS mark
+      delete process.env.CI;
+      delete process.env.NO_COLOR;
+      await showWordmark('CREATOR OS', 'the operating system for social media', [
+        [0, 229, 255],
+        [225, 232, 240],
+        [56, 189, 248],
+      ]);
+      const output = writes.join('');
+      // animated path taken: gradient frames rendered, no plain-text fallback
+      expect(output).toContain('\x1b[38;2;');
+      expect(output).toContain('█');
+      expect(logSpy).not.toHaveBeenCalled();
+    } finally {
+      stdout.isTTY = saved.isTTY;
+      stdout.columns = saved.columns;
+      if (saved.ci !== undefined) process.env.CI = saved.ci;
+      if (saved.noColor !== undefined) process.env.NO_COLOR = saved.noColor;
+      writeSpy.mockRestore();
+      logSpy.mockRestore();
+    }
+  }, 15000);
 });
