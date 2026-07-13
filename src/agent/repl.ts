@@ -26,12 +26,13 @@ export async function runRepl(
   config: KairosConfig | null,
   workspaceRoot: string,
 ): Promise<void> {
+  // Model auth, two ways: ANTHROPIC_API_KEY, or the user's Claude plan via
+  // the logged-in claude CLI (the Agent SDK drives it under the hood).
   if (!process.env.ANTHROPIC_API_KEY) {
-    console.error(
-      'Kairos needs ANTHROPIC_API_KEY set to think. Export it and re-run: export ANTHROPIC_API_KEY=...',
+    console.log(
+      '\x1b[2mNo ANTHROPIC_API_KEY set — running on your Claude plan via the claude CLI. ' +
+        'If I fail to think, log in once with `claude` or export an API key.\x1b[0m',
     );
-    process.exitCode = 1;
-    return;
   }
 
   console.log(BANNER);
