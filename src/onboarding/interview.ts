@@ -4,7 +4,7 @@
  * Kairos reads forever after. Resumable: state saves after every step.
  */
 import { checkbox, confirm, input, password, select } from '@inquirer/prompts';
-import { spawnSync } from 'node:child_process';
+import { claudeCliAvailable, detectBrain } from '../util/brain.js';
 import { cp, mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -222,10 +222,6 @@ async function collectKeysInteractively(state: InterviewState): Promise<CreatorO
   return active.client;
 }
 
-function claudeCliAvailable(): boolean {
-  return spawnSync('claude', ['--version'], { stdio: 'ignore' }).status === 0;
-}
-
 /**
  * The brain check: Kairos thinks with Claude. Best path is the user's
  * existing Claude plan via the logged-in claude CLI — zero API keys. An
@@ -233,12 +229,13 @@ function claudeCliAvailable(): boolean {
  * user knows the state of their brain before the REPL needs it.
  */
 async function stepBrain(state: InterviewState): Promise<void> {
-  if (process.env.ANTHROPIC_API_KEY) {
+  const status = detectBrain();
+  if (status === 'api-key') {
     say('AI brain: ANTHROPIC_API_KEY found — I think with that.');
     markStepDone(state, 'brain');
     return;
   }
-  if (claudeCliAvailable()) {
+  if (status === 'plan') {
     say(
       "AI brain: Claude Code is installed — I run on your Claude plan, no API key needed. (If my first reply ever fails with an auth error, run `claude` once to log in.)",
     );

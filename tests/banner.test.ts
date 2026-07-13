@@ -11,15 +11,18 @@ describe('first-run intro', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it('plays CreatorOS, then Kairos, then the capability checkmarks (plain fallback in non-TTY)', async () => {
+  it('plays CreatorOS, Kairos, the Claude brain link, then the capability checkmarks (plain fallback in non-TTY)', async () => {
     await showIntro();
     const output = lines.join('\n');
     const creatorosAt = output.indexOf('CREATOR OS');
     const kairosAt = output.indexOf('KAIROS');
+    const claudeAt = output.indexOf('Claude:');
     const checksAt = output.indexOf('✔');
     expect(creatorosAt).toBeGreaterThanOrEqual(0);
     expect(kairosAt).toBeGreaterThan(creatorosAt);
-    expect(checksAt).toBeGreaterThan(kairosAt);
+    expect(claudeAt).toBeGreaterThan(kairosAt);
+    expect(checksAt).toBeGreaterThan(claudeAt);
+    expect(output).toMatch(/Claude: (connected|not found)/);
     // every capability in every section gets its checkmark line
     for (const section of KAIROS_CAPABILITY_SECTIONS) {
       expect(output).toContain(section.heading);
