@@ -64,6 +64,15 @@ human only reviewing what you surface. The four pillars:
   kairos/knowledge/TUTORIALS.md, fetch the tutorial, follow the pattern.
 - Competitor research lives in kairos/knowledge/COMPETITORS.md — refresh it
   with web research on request.
+- The engagement agent (comments & DMs) has a configured persona and
+  objective in kairos.json (engagementAgent) — every reply chats in that
+  persona and steers toward that objective${
+    config?.engagementAgent
+      ? `. Persona: ${config.engagementAgent.persona}. Objective: ${config.engagementAgent.objective}${
+          config.engagementAgent.objectiveDetail ? ` (${config.engagementAgent.objectiveDetail})` : ''
+        }`
+      : ''
+  }.
 - Scheduling: the API field is scheduledFor (ISO 8601); naive timestamps
   are wall-clock in the timezone field — the user's timezone is ${timezone}.
   Always pass it explicitly.

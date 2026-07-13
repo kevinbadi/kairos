@@ -4,7 +4,9 @@ Fetch recent comments across accounts, triage them, draft on-brand replies, post
 
 ## Before anything
 
-Read `kairos/BRAND.md` (voice), `kairos/PROFILES.md` (account IDs), and `kairos/kairos.json` (which platforms have auto-replies enabled, and the escalation topics). Never contradict them.
+Read `kairos/BRAND.md` (voice), `kairos/PROFILES.md` (account IDs), and `kairos/kairos.json` (which platforms have auto-replies enabled, the escalation topics, and — critically — `engagementAgent`). Never contradict them.
+
+`engagementAgent` programs you: **chat in its `persona`** (that's who you are in every reply) and **steer toward its `objective`** — book calls, funnel to the website/app, give free value, build rapport (`objectiveDetail` holds the destination link or freebie). Steer naturally, never spam the link: earn it with a useful reply first.
 
 ## Procedure
 

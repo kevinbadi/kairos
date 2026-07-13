@@ -51,6 +51,11 @@ export interface InterviewState {
       accountIds?: string[];
       scope?: 'account-wide' | 'per-post';
     };
+    engagement?: {
+      persona: string;
+      objective: 'book-calls' | 'funnel' | 'free-value' | 'rapport' | 'other';
+      objectiveDetail?: string;
+    };
     autoReplies?: {
       comments: { enabled: boolean; platforms: string[]; tone: string; escalate: string[] };
       messages: { enabled: boolean; platforms: string[]; tone: string; escalate: string[] };

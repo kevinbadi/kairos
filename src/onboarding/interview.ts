@@ -33,6 +33,8 @@ import {
   type InterviewState,
 } from './state.js';
 import { renderBrandMd, renderProfilesMd, renderSetupSummary, renderTutorialsMd } from './render.js';
+import { askBlock, askList } from '../ui/prompts.js';
+import { showEngagementPreview } from '../ui/preview.js';
 import { buildFunnelAutomation, describeFunnel } from '../automations/funnels.js';
 import {
   createAutomation,
@@ -249,14 +251,13 @@ async function stepKey(paths: KairosPaths, state: InterviewState): Promise<Creat
 async function stepBrand(): Promise<BrandAnswers> {
   say("Now the part that matters most — the brand pack. Everything I ever write for you flows from this, so give it to me straight.");
 
-  const about = await input({
-    message: 'What is this brand actually about? What are you marketing?',
-    validate: (v) => v.trim().length > 0 || 'Give me at least a sentence.',
+  const about = await askBlock('What is this brand actually about? What are you marketing?', {
+    required: true,
   });
-  const selling = await input({
-    message: 'What do you sell? (product, service, offer — the thing the content drives toward)',
-    validate: (v) => v.trim().length > 0 || "If it's nothing yet, say what you're building toward.",
-  });
+  const selling = await askBlock(
+    'What do you sell? (product, service, offer — the thing the content drives toward)',
+    { required: true },
+  );
   const adjectivesRaw = await input({
     message: 'Your voice in three adjectives (comma-separated):',
     validate: (v) => v.split(',').filter((s) => s.trim()).length >= 3 || 'Give me three.',
@@ -281,32 +282,29 @@ async function stepBrand(): Promise<BrandAnswers> {
       { name: 'Aggressive — as many as the platform tolerates', value: 'aggressive' },
     ],
   });
-  const exampleCaption = await input({
-    message: 'Paste one example caption you love (yours or anyone\'s):',
-    validate: (v) => v.trim().length > 0 || 'One example calibrates me better than ten rules.',
+  const exampleCaption = await askBlock("Paste one example caption you love (yours or anyone's):", {
+    required: true,
   });
-  const linksRaw = await input({
-    message: 'Links to your products/services (comma-separated — every CTA I write points at one of these):',
-  });
-  const audience = await input({
-    message: 'Target audience in one sentence:',
-    validate: (v) => v.trim().length > 0 || 'One sentence.',
-  });
-  const competitorsRaw = await input({
-    message: 'Competitor accounts to watch — handles or URLs, up to 5, comma-separated (blank to skip):',
-  });
+  const productLinks = await askList(
+    'Links to your products/services — every CTA I write points at one of these (one per line or comma-separated, empty line to skip):',
+  );
+  const audience = await askBlock('Target audience in one sentence:', { required: true });
+  const competitors = await askList(
+    'Competitor accounts to watch — handles or URLs, up to 5 (empty line to skip):',
+    { max: 5 },
+  );
 
   return {
-    about: about.trim(),
-    selling: selling.trim(),
+    about,
+    selling,
     voiceAdjectives: adjectivesRaw.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 3),
     voiceNever: voiceNever.trim(),
     emojiPolicy,
     hashtagPolicy,
-    exampleCaption: exampleCaption.trim(),
-    productLinks: linksRaw.split(',').map((s) => s.trim()).filter(Boolean),
-    audience: audience.trim(),
-    competitors: competitorsRaw.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 5),
+    exampleCaption,
+    productLinks,
+    audience,
+    competitors,
   };
 }
 
@@ -379,11 +377,13 @@ async function stepFunnel(state: InterviewState, accounts: SocialAccount[]): Pro
       : '__other__';
   const finalLink =
     link === '__other__' ? (await input({ message: 'Link to send in the DM:' })).trim() : link;
-  const dmMessage = await input({
-    message: 'The DM message (the link is attached as a button — keep it under 640 chars):',
-    validate: (v) =>
-      v.trim().length > 0 && v.length <= 640 ? true : 'Between 1 and 640 characters.',
-  });
+  const dmMessage = await askBlock(
+    'The DM message (the link is attached as a button — keep it under 640 chars):',
+    {
+      required: true,
+      validate: (v) => (v.length <= 640 ? true : `That's ${v.length} chars — keep it under 640.`),
+    },
+  );
   const accountIds = await checkbox({
     message: 'Run it on which accounts? (funnels are Instagram/Facebook)',
     choices: funnelAccounts.map((a) => ({
@@ -407,8 +407,42 @@ async function stepFunnel(state: InterviewState, accounts: SocialAccount[]): Pro
 
 async function stepAutoReplies(state: InterviewState, accounts: SocialAccount[]): Promise<void> {
   say(
-    'Comment and message auto-replies are live for all CreatorOS users. Let\'s set what I handle vs what I escalate to you.',
+    "Comment and message auto-replies are live for all CreatorOS users. Two questions program that agent — your answers drive the automations directly.",
   );
+
+  // Q1: persona — how the agent chats.
+  const persona = await askBlock(
+    'Who is the agent when it chats? Give it a persona: a name if you like, how it talks, its energy. (e.g. "Maya — warm, punchy, jokes around, talks like a gym friend not a support desk")',
+    { required: true },
+  );
+
+  // Q2: objective — what every comment & DM conversation drives toward.
+  const objective = await select({
+    message: 'What is the agent trying to do with comments and messages?',
+    choices: [
+      { name: 'Book calls', value: 'book-calls' as const },
+      { name: 'Funnel to my website / app', value: 'funnel' as const },
+      { name: 'Give free value (guide, freebie, tips)', value: 'free-value' as const },
+      { name: 'Build rapport & community', value: 'rapport' as const },
+      { name: 'Something else', value: 'other' as const },
+    ],
+  });
+  const detailPrompts: Record<string, string> = {
+    'book-calls': 'Booking link (Calendly etc.):',
+    funnel: 'Website / app link to funnel people to:',
+    'free-value': 'What\'s the freebie, and the link to it?',
+    rapport: 'Anything specific to work toward? (empty line to skip)',
+    other: 'Describe the objective in your own words:',
+  };
+  const objectiveDetail = await askBlock(detailPrompts[objective]!, {
+    required: objective === 'other',
+  });
+  state.answers.engagement = {
+    persona,
+    objective,
+    objectiveDetail: objectiveDetail || undefined,
+  };
+
   const connected = new Set(accounts.map((a) => a.platform));
   const commentChoices = COMMENT_REPLY_PLATFORMS.filter((p) => connected.has(p));
   const messageChoices = MESSAGE_REPLY_PLATFORMS.filter((p) => connected.has(p));
@@ -457,19 +491,21 @@ async function stepPathway(state: InterviewState): Promise<void> {
     message: 'Automation pathway:',
     choices: [
       {
-        name: 'Local (this Mac) — cron jobs run as launchd services here; the machine must be awake at scheduled times',
+        name: 'Local (this Mac) — runs on your existing Claude plan; the machine must be awake at scheduled times',
         value: 'local' as const,
       },
       {
-        name: 'VPS (Railway) — always-on cloud; needs your keys on the service',
+        name: 'VPS (Railway) — always-on cloud; needs an AI API key (Claude etc.) on the service',
         value: 'railway' as const,
       },
     ],
   });
   if (automationTarget === 'railway') {
     say(
-      `⚠ ${RAILWAY_SPEND_LIMIT_WARNING}`,
+      `For the comment & messaging agents to run autonomously in the cloud, the service needs an AI API key (ANTHROPIC_API_KEY).\n⚠ ${RAILWAY_SPEND_LIMIT_WARNING}`,
     );
+  } else {
+    say('Local runs use your Claude plan through the claude CLI — no separate AI API key needed.');
   }
   const timezone = await input({
     message: 'Your timezone (IANA name):',
@@ -505,6 +541,7 @@ async function stepFinish(
           accountIds: state.answers.funnel.accountIds ?? [],
         }
       : { enabled: false, keywords: [], matchMode: 'contains', dmMessage: '', scope: 'account-wide', accountIds: [] },
+    engagementAgent: state.answers.engagement,
     autoReplies: state.answers.autoReplies,
     onboardedAt: new Date().toISOString(),
   };
@@ -551,6 +588,21 @@ async function stepFinish(
         say(`Couldn't create the funnel on ${platformLabel(account.platform)}: ${(error as Error).message}. Saved the config — we can retry from the chat.`);
       }
     }
+  }
+
+  // The cool touch: an animated preview of the comment-to-DM conversation,
+  // built from the persona + objective they just gave the agent.
+  if (state.answers.engagement) {
+    await showEngagementPreview({
+      keyword: state.answers.funnel?.keywords?.[0] ?? 'INFO',
+      dmMessage:
+        state.answers.funnel?.dmMessage ||
+        'Hey! Saw your comment — here\'s what you asked for.',
+      link: state.answers.funnel?.link ?? state.answers.brand?.productLinks[0],
+      persona: state.answers.engagement.persona,
+      objective: state.answers.engagement.objective,
+      objectiveDetail: state.answers.engagement.objectiveDetail,
+    });
   }
 
   // Offer the starter crons — the four pillars on schedules.

@@ -17,6 +17,20 @@ export interface FunnelConfig {
   accountIds: string[];
 }
 
+export type EngagementObjective = 'book-calls' | 'funnel' | 'free-value' | 'rapport' | 'other';
+
+/**
+ * Programs the comment & messaging agents: who they are when they chat,
+ * and what every conversation drives toward. Used directly by the
+ * engagement automations.
+ */
+export interface EngagementAgentConfig {
+  persona: string;
+  objective: EngagementObjective;
+  /** Booking link, website/app URL, freebie description — the destination. */
+  objectiveDetail?: string;
+}
+
 export interface AutoReplyConfig {
   enabled: boolean;
   platforms: string[];
@@ -33,6 +47,7 @@ export interface KairosConfig {
   timezone: string;
   profileId?: string;
   funnel?: FunnelConfig;
+  engagementAgent?: EngagementAgentConfig;
   autoReplies?: {
     comments: AutoReplyConfig;
     messages: AutoReplyConfig;
