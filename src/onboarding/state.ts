@@ -8,9 +8,9 @@ import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export const INTERVIEW_STEPS = [
+  'brain',
   'mode',
   'key',
-  'brain',
   'brand',
   'profiles',
   'funnel',
@@ -45,7 +45,9 @@ export interface InterviewState {
   /** Steps already completed, in order. */
   completed: InterviewStep[];
   answers: {
-    /** Question #1: is this an agency running client brands, or a creator? */
+    /** The AI brain: claude, or any Anthropic-compatible API (key stays in ~/.kairos). */
+    brain?: { provider: 'claude' | 'custom'; baseUrl?: string; model?: string };
+    /** Is this an agency running client brands, or a creator? */
     mode?: 'creator' | 'agency';
     /** Agency client labels only — the keys themselves never land in the workspace. */
     clientLabels?: string[];

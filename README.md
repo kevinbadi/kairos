@@ -18,9 +18,11 @@ The end state Kai drives toward: all four pillars on cron jobs — content posti
 
 # 2. You need:
 #    - CreatorOS API key (CreatorOS iOS app → Settings → API Key, sk_...)
-#    - An AI brain, either way works:
-#        · logged-in Claude Code (`claude`) — runs on your Claude plan, or
+#    - An AI brain, any of these works:
+#        · logged-in Claude Code (`claude`) — runs on your Claude plan (recommended)
 #        · export ANTHROPIC_API_KEY=...
+#        · any model behind an Anthropic-compatible API (Moonshot/Kimi,
+#          DeepSeek, GLM…) — Kai asks for base URL + model + key in setup
 
 # 3. Go.
 npm start creatoros kairos     # alias: npm start creatoros kai

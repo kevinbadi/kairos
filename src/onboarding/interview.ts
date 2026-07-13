@@ -4,7 +4,8 @@
  * Kairos reads forever after. Resumable: state saves after every step.
  */
 import { checkbox, confirm, input, password, select } from '@inquirer/prompts';
-import { claudeCliAvailable, detectBrain } from '../util/brain.js';
+import { detectBrain, type BrainConfig } from '../util/brain.js';
+import { promptBrainChoice, toSettings, verifyBrainInteractive } from '../config/brainSetup.js';
 import { cp, mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -74,20 +75,21 @@ export async function runInterview(root: string = process.cwd()): Promise<Interv
       : "Hey — I'm Kai. I run your social presence on CreatorOS: posting at scale, automations, replies, analytics. Before I touch anything, brief me. This takes about five minutes and I'll remember all of it.",
   );
 
-  // ---- Question #1: agency or creator ----
+  // ---- The brain — if the Claude connection fails, the FIRST question
+  // is which AI model to use (Claude SDK, or any OpenAI-compatible API).
+  if (!isStepDone(state, 'brain')) {
+    await stepBrain(state);
+    await saveState(paths.setupStateJson, state);
+  }
+
+  // ---- Creator or agency ----
   if (!isStepDone(state, 'mode')) {
     await stepMode(state);
     await saveState(paths.setupStateJson, state);
   }
 
-  // ---- Step 2: key(s) + accounts ----
+  // ---- Key(s) + accounts ----
   const client = await stepKey(paths, state);
-
-  // ---- Step 3: the AI brain (Claude plan or API key) ----
-  if (!isStepDone(state, 'brain')) {
-    await stepBrain(state);
-    await saveState(paths.setupStateJson, state);
-  }
 
   // ---- Step 2: brand pack ----
   if (!isStepDone(state, 'brand')) {
@@ -223,37 +225,27 @@ async function collectKeysInteractively(state: InterviewState): Promise<CreatorO
 }
 
 /**
- * The brain check: Kairos thinks with Claude. Best path is the user's
- * existing Claude plan via the logged-in claude CLI — zero API keys. An
- * ANTHROPIC_API_KEY works too. Never blocks setup; just makes sure the
- * user knows the state of their brain before the REPL needs it.
+ * The brain check. Claude detected (plan login or ANTHROPIC_API_KEY) →
+ * verify and move on. Claude connection failed → the first question of
+ * the whole interview: which AI model — Claude, or any model behind an
+ * Anthropic-compatible API. Every choice gets a live round-trip check.
  */
 async function stepBrain(state: InterviewState): Promise<void> {
+  let brain: BrainConfig;
   const status = detectBrain();
-  if (status === 'api-key') {
-    say('AI brain: ANTHROPIC_API_KEY found — I think with that.');
-    markStepDone(state, 'brain');
-    return;
-  }
-  if (status === 'plan') {
+  if (status === 'missing') {
+    say("The Claude connection isn't there yet, so first things first:");
+    brain = await promptBrainChoice();
+  } else {
     say(
-      "AI brain: Claude Code is installed — I run on your Claude plan, no API key needed. (If my first reply ever fails with an auth error, run `claude` once to log in.)",
+      status === 'plan'
+        ? 'AI brain: Claude Code detected — I run on your Claude plan, no API key needed.'
+        : 'AI brain: ANTHROPIC_API_KEY found — I think with Claude via that key.',
     );
-    markStepDone(state, 'brain');
-    return;
+    brain = { provider: 'claude' };
   }
-  say(
-    'I think with Claude, and I need a brain plugged in. Two ways — your plan is the easy one:\n' +
-      '  1. Your Claude plan (recommended): npm i -g @anthropic-ai/claude-code, then run `claude` once and log in.\n' +
-      '  2. An API key: export ANTHROPIC_API_KEY=sk-ant-...',
-  );
-  const ready = await confirm({
-    message: 'Set up now in another terminal — ready? (No is fine; finish setup and plug it in before we chat)',
-    default: true,
-  });
-  if (ready && !claudeCliAvailable() && !process.env.ANTHROPIC_API_KEY) {
-    say("I still can't see it — finishing setup anyway. I'll need the brain when you send your first message.");
-  }
+  brain = await verifyBrainInteractive(brain);
+  state.answers.brain = toSettings(brain);
   markStepDone(state, 'brain');
 }
 
@@ -583,6 +575,7 @@ async function stepFinish(
   const config: KairosConfig = {
     version: 1,
     mode: state.answers.mode ?? 'creator',
+    brain: state.answers.brain ?? { provider: 'claude' },
     automationTarget: pathway.automationTarget,
     timezone: pathway.timezone,
     profileId,

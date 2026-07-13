@@ -20,10 +20,12 @@ async function tmpStatePath(): Promise<string> {
 }
 
 describe('interview persistence & resume', () => {
-  it('starts empty with the agency-or-creator question first, then the key', () => {
+  it('starts with the brain (AI model) when unresolved, then agency-or-creator, then the key', () => {
     const state = emptyState();
-    expect(nextStep(state)).toBe('mode');
+    expect(nextStep(state)).toBe('brain');
     expect(isInterviewComplete(state)).toBe(false);
+    markStepDone(state, 'brain');
+    expect(nextStep(state)).toBe('mode');
     markStepDone(state, 'mode');
     expect(nextStep(state)).toBe('key');
   });
@@ -31,8 +33,10 @@ describe('interview persistence & resume', () => {
   it('records agency mode with client labels but never the keys themselves', async () => {
     const path = await tmpStatePath();
     const state = emptyState();
+    state.answers.brain = { provider: 'custom', baseUrl: 'https://api.example/anthropic', model: 'some-model' };
     state.answers.mode = 'agency';
     state.answers.clientLabels = ['Acme Fitness', 'Bolt Coffee'];
+    markStepDone(state, 'brain');
     markStepDone(state, 'mode');
     await saveState(path, state);
     const { readFile } = await import('node:fs/promises');

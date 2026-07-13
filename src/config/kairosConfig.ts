@@ -17,6 +17,21 @@ export interface FunnelConfig {
   accountIds: string[];
 }
 
+/**
+ * Which AI brain Kai thinks with. 'claude' = the user's Claude plan (via
+ * the logged-in claude CLI) or ANTHROPIC_API_KEY. 'custom' = any model
+ * behind an Anthropic-compatible API, driven through the same Agent SDK
+ * by pointing it at the base URL. The API key for a custom brain lives in
+ * ~/.kairos/credentials.json — NEVER here.
+ */
+export interface BrainSettings {
+  provider: 'claude' | 'custom';
+  /** Anthropic-compatible API base, e.g. https://api.moonshot.ai/anthropic */
+  baseUrl?: string;
+  /** Model id exactly as the provider names it. */
+  model?: string;
+}
+
 export type EngagementObjective = 'book-calls' | 'funnel' | 'free-value' | 'rapport' | 'other';
 
 /**
@@ -46,6 +61,7 @@ export interface KairosConfig {
   automationTarget: AutomationTarget;
   timezone: string;
   profileId?: string;
+  brain?: BrainSettings;
   funnel?: FunnelConfig;
   engagementAgent?: EngagementAgentConfig;
   autoReplies?: {

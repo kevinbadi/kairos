@@ -27,6 +27,25 @@ export interface StoredCredentials {
   apiKey: string;
   /** Agency mode: one CreatorOS key per client brand. */
   keys?: Array<{ label: string; apiKey: string }>;
+  /** API key for a custom (Anthropic-compatible) brain. */
+  aiApiKey?: string;
+}
+
+/** Custom-brain API key: AI_API_KEY env wins, then the saved one. */
+export async function resolveAiApiKey(): Promise<string | null> {
+  const fromEnv = process.env.AI_API_KEY?.trim();
+  if (fromEnv) return fromEnv;
+  if (!existsSync(CREDENTIALS_PATH)) return null;
+  try {
+    const parsed = JSON.parse(await readFile(CREDENTIALS_PATH, 'utf8')) as StoredCredentials;
+    return parsed.aiApiKey ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveAiApiKey(aiApiKey: string): Promise<void> {
+  await saveCredentials({ aiApiKey } as unknown as StoredCredentials);
 }
 
 export async function saveApiKey(apiKey: string): Promise<void> {
