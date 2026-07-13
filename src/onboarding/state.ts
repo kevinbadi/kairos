@@ -20,15 +20,22 @@ export const INTERVIEW_STEPS = [
 
 export type InterviewStep = (typeof INTERVIEW_STEPS)[number];
 
+export interface ProductOffer {
+  /** Destination URL — every CTA points at one of these. */
+  link?: string;
+  /** What the link is / what's being sold. */
+  description: string;
+}
+
 export interface BrandAnswers {
   about: string;
-  selling: string;
+  /** What you sell + where it lives: one row per offer (link, explainer). */
+  products: ProductOffer[];
   voiceAdjectives: string[];
   voiceNever: string;
   emojiPolicy: string;
   hashtagPolicy: string;
   exampleCaption: string;
-  productLinks: string[];
   audience: string;
   competitors: string[];
 }

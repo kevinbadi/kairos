@@ -2,9 +2,31 @@
  * Pure renderers for the files Kairos reads forever after. Everything
  * Kairos writes later — captions, descriptions, CTAs — flows from BRAND.md.
  */
-import type { BrandAnswers, InterviewState } from './state.js';
+import type { BrandAnswers, InterviewState, ProductOffer } from './state.js';
 import type { SocialAccount } from '../client/types.js';
 import { platformLabel } from '../client/platformMatrix.js';
+
+/**
+ * Parse the combined "what do you sell" answer: one offer per line,
+ * `link, explainer` — or just an explainer when there's no link yet.
+ */
+export function parseProducts(raw: string): ProductOffer[] {
+  return raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const commaAt = line.indexOf(',');
+      const first = (commaAt === -1 ? line : line.slice(0, commaAt)).trim();
+      const rest = commaAt === -1 ? '' : line.slice(commaAt + 1).trim();
+      const looksLikeLink = /^(https?:\/\/|www\.)\S+$/i.test(first) || (/^\S+\.\S{2,}/.test(first) && !first.includes(' '));
+      if (looksLikeLink) {
+        const link = first.startsWith('http') ? first : `https://${first}`;
+        return { link, description: rest || first };
+      }
+      return { description: line };
+    });
+}
 
 export function renderBrandMd(brand: BrandAnswers): string {
   const competitors =
@@ -12,9 +34,11 @@ export function renderBrandMd(brand: BrandAnswers): string {
       ? brand.competitors.map((c) => `- ${c}`).join('\n')
       : '_None given yet — add handles here and ask Kairos to research them._';
   const links =
-    brand.productLinks.length > 0
-      ? brand.productLinks.map((l) => `- ${l}`).join('\n')
-      : '_No product links yet — every CTA needs a destination; add them here._';
+    brand.products.length > 0
+      ? brand.products
+          .map((p) => (p.link ? `- ${p.description} — ${p.link}` : `- ${p.description} _(no link yet)_`))
+          .join('\n')
+      : '_Nothing listed yet — every CTA needs a destination; add offers here as `description — link`._';
 
   return `# Brand Pack
 
@@ -25,9 +49,9 @@ CTA flows from here. Edit freely — Kairos always uses the latest version.
 
 ${brand.about}
 
-## What we sell / market
+## What we sell — products, services & CTA destinations
 
-${brand.selling}
+${links}
 
 ## Voice
 
@@ -39,10 +63,6 @@ ${brand.selling}
 ### Example caption we love
 
 > ${brand.exampleCaption.split('\n').join('\n> ')}
-
-## Product & service links (CTA destinations)
-
-${links}
 
 ## Target audience
 
@@ -85,6 +105,51 @@ Adding a tutorial is a one-line edit: \`- [Title](URL) — what it teaches\`.
 
 - _(none yet — add KevBuildsApps YouTube tutorials here as they ship)_
 `;
+}
+
+/**
+ * The prompt the user hands their AI agent to actually get everything set
+ * up — every task traces back to a questionnaire answer already
+ * materialized in kairos/. Printed at the finish and saved to
+ * kairos/SETUP_PROMPT.md.
+ */
+export function renderSetupPrompt(state: InterviewState): string {
+  const funnel = state.answers.funnel;
+  const engagement = state.answers.engagement;
+  const autoReplies = state.answers.autoReplies;
+  const pathway = state.answers.pathway;
+  const competitors = state.answers.brand?.competitors ?? [];
+
+  const tasks: string[] = [
+    'Verify every connected account is healthy (account_health) and flag anything that needs a reconnect.',
+  ];
+  if (funnel?.enabled) {
+    tasks.push(
+      `Create the comment-to-DM funnel exactly as configured in kairos.json (keyword(s) ${funnel.keywords?.map((k) => `"${k}"`).join(', ')} → the saved DM copy${funnel.link ? ` with ${funnel.link}` : ''}). Show me the exact copy and get my confirmation before it goes live, then verify with list_funnels.`,
+    );
+  }
+  if (engagement) {
+    tasks.push(
+      'Set up the comment & message auto-reply automation on the enabled platforms using the engagementAgent persona and objective in kairos.json — engagement-sweep cron on my pathway (webhook-driven if on Railway). Escalation topics apply.',
+    );
+  }
+  tasks.push(
+    `Create the starter crons I still need on the ${pathway?.automationTarget ?? 'local'} pathway (daily-shortform once content-library/ has clips, weekly-calendar, weekly-analytics) and verify they are loaded with list_cron_automations.`,
+  );
+  if (competitors.length > 0) {
+    tasks.push(
+      `Research my competitors (${competitors.join(', ')}) — content mix, cadence, hooks, gaps — and write kairos/knowledge/COMPETITORS.md.`,
+    );
+  }
+  tasks.push(
+    'Pull follower stats and recent post analytics, then give me an honest state-of-the-socials read with ONE recommended first move.',
+  );
+
+  return `Read kairos/kairos.json, kairos/BRAND.md, and kairos/PROFILES.md first — they hold everything I answered during setup. Then, in order:
+
+${tasks.map((task, index) => `${index + 1}. ${task}`).join('\n')}
+
+Confirm anything that publishes or DMs strangers with me before it goes live. Report what you did, what you verified, and what's left.`;
 }
 
 /** The onboarding summary Kairos delivers in character at the finish. */

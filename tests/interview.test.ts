@@ -12,7 +12,7 @@ import {
   INTERVIEW_STEPS,
   type InterviewState,
 } from '../src/onboarding/state.js';
-import { renderBrandMd, renderProfilesMd } from '../src/onboarding/render.js';
+import { parseProducts, renderBrandMd, renderProfilesMd, renderSetupPrompt } from '../src/onboarding/render.js';
 
 async function tmpStatePath(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'kairos-test-'));
@@ -52,13 +52,12 @@ describe('interview persistence & resume', () => {
     markStepDone(state, 'brand');
     state.answers.brand = {
       about: 'Fitness coaching',
-      selling: '1:1 programs',
+      products: [{ link: 'https://coach.example/buy', description: '1:1 programs' }],
       voiceAdjectives: ['direct', 'warm', 'practical'],
       voiceNever: 'corporate',
       emojiPolicy: 'none',
       hashtagPolicy: 'none',
       exampleCaption: 'Show up. Again.',
-      productLinks: ['https://coach.example/buy'],
       audience: 'busy parents',
       competitors: ['@bigcoach'],
     };
@@ -68,7 +67,7 @@ describe('interview persistence & resume', () => {
     const resumed = await loadState(path);
     expect(resumed.completed).toEqual(['mode', 'key', 'brand']);
     expect(nextStep(resumed)).toBe('profiles');
-    expect(resumed.answers.brand?.productLinks).toEqual(['https://coach.example/buy']);
+    expect(resumed.answers.brand?.products[0]?.link).toBe('https://coach.example/buy');
   });
 
   it('is complete only after every step, in the spec order', () => {
@@ -95,13 +94,15 @@ describe('interview persistence & resume', () => {
 describe('brand pack rendering', () => {
   const brand = {
     about: 'Streetwear drops',
-    selling: 'Limited hoodies',
+    products: [
+      { link: 'https://shop.example/drop', description: 'Limited hoodies' },
+      { description: 'Styling service (no link yet)' },
+    ],
     voiceAdjectives: ['bold', 'scarce', 'playful'],
     voiceNever: 'thirsty',
     emojiPolicy: 'sparingly (max one per caption)',
     hashtagPolicy: 'a few relevant ones (2-4)',
     exampleCaption: '48 hours. Then gone.',
-    productLinks: ['https://shop.example/drop'],
     audience: 'sneakerheads 18-30',
     competitors: ['@rivalbrand', '@otherbrand'],
   };
@@ -110,10 +111,55 @@ describe('brand pack rendering', () => {
     const md = renderBrandMd(brand);
     expect(md).toContain('bold, scarce, playful');
     expect(md).toContain('Never: thirsty');
-    expect(md).toContain('https://shop.example/drop');
+    expect(md).toContain('Limited hoodies — https://shop.example/drop');
+    expect(md).toContain('Styling service (no link yet)');
     expect(md).toContain('@rivalbrand');
     expect(md).toContain('sneakerheads 18-30');
     expect(md).toContain('48 hours. Then gone.');
+  });
+
+  it('parses "link, explainer" rows — with and without links', () => {
+    const products = parseProducts(
+      [
+        'https://shop.example/guide, my $29 training guide',
+        'coach.example/call, free strategy call',
+        'merch drop coming in Q4, no link yet',
+      ].join('\n'),
+    );
+    expect(products[0]).toEqual({ link: 'https://shop.example/guide', description: 'my $29 training guide' });
+    expect(products[1]).toEqual({ link: 'https://coach.example/call', description: 'free strategy call' });
+    expect(products[2]?.link).toBeUndefined();
+    expect(products[2]?.description).toContain('merch drop');
+  });
+
+  it('the setup prompt makes the agent act on every questionnaire answer', () => {
+    const state: InterviewState = {
+      completed: [],
+      answers: {
+        brand: { ...brand },
+        funnel: {
+          enabled: true,
+          keywords: ['GUIDE'],
+          dmMessage: 'here you go!',
+          link: 'https://shop.example/drop',
+          accountIds: ['acc1'],
+          scope: 'account-wide',
+        },
+        engagement: { persona: 'Maya — warm, punchy', objective: 'book-calls', objectiveDetail: 'https://cal.com/x' },
+        pathway: { automationTarget: 'railway', timezone: 'America/Toronto' },
+      },
+    };
+    const prompt = renderSetupPrompt(state);
+    expect(prompt).toContain('kairos/kairos.json');
+    expect(prompt).toContain('"GUIDE"');
+    expect(prompt).toContain('railway');
+    expect(prompt).toContain('@rivalbrand');
+    expect(prompt).toMatch(/confirmation before it goes live/i);
+    expect(prompt).toMatch(/follower stats/i);
+    // funnel/engagement tasks disappear when not configured
+    const bare = renderSetupPrompt({ completed: [], answers: {} });
+    expect(bare).not.toContain('comment-to-DM funnel');
+    expect(bare).not.toContain('persona');
   });
 
   it('renders the profile map with account IDs', () => {

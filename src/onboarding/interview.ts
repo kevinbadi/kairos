@@ -32,7 +32,14 @@ import {
   type BrandAnswers,
   type InterviewState,
 } from './state.js';
-import { renderBrandMd, renderProfilesMd, renderSetupSummary, renderTutorialsMd } from './render.js';
+import {
+  parseProducts,
+  renderBrandMd,
+  renderProfilesMd,
+  renderSetupPrompt,
+  renderSetupSummary,
+  renderTutorialsMd,
+} from './render.js';
 import { askBlock, askList } from '../ui/prompts.js';
 import { showEngagementPreview } from '../ui/preview.js';
 import { buildFunnelAutomation, describeFunnel } from '../automations/funnels.js';
@@ -254,10 +261,11 @@ async function stepBrand(): Promise<BrandAnswers> {
   const about = await askBlock('What is this brand actually about? What are you marketing?', {
     required: true,
   });
-  const selling = await askBlock(
-    'What do you sell? (product, service, offer — the thing the content drives toward)',
+  const productsRaw = await askBlock(
+    'What do you sell? One offer per line as "link, what it is" — e.g. "https://shop.example/guide, my $29 training guide". No link yet? Just describe it.',
     { required: true },
   );
+  const products = parseProducts(productsRaw);
   const adjectivesRaw = await input({
     message: 'Your voice in three adjectives (comma-separated):',
     validate: (v) => v.split(',').filter((s) => s.trim()).length >= 3 || 'Give me three.',
@@ -285,9 +293,6 @@ async function stepBrand(): Promise<BrandAnswers> {
   const exampleCaption = await askBlock("Paste one example caption you love (yours or anyone's):", {
     required: true,
   });
-  const productLinks = await askList(
-    'Links to your products/services — every CTA I write points at one of these (one per line or comma-separated, empty line to skip):',
-  );
   const audience = await askBlock('Target audience in one sentence:', { required: true });
   const competitors = await askList(
     'Competitor accounts to watch — handles or URLs, up to 5 (empty line to skip):',
@@ -296,13 +301,12 @@ async function stepBrand(): Promise<BrandAnswers> {
 
   return {
     about,
-    selling,
+    products,
     voiceAdjectives: adjectivesRaw.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 3),
     voiceNever: voiceNever.trim(),
     emojiPolicy,
     hashtagPolicy,
     exampleCaption,
-    productLinks,
     audience,
     competitors,
   };
@@ -364,13 +368,13 @@ async function stepFunnel(state: InterviewState, accounts: SocialAccount[]): Pro
     message: 'Trigger keyword(s), comma-separated (e.g. "LINK, GUIDE"):',
     validate: (v) => v.split(',').some((s) => s.trim()) || 'At least one keyword.',
   });
-  const productLinks = state.answers.brand?.productLinks ?? [];
+  const linkedProducts = (state.answers.brand?.products ?? []).filter((p) => p.link);
   const link =
-    productLinks.length > 0
+    linkedProducts.length > 0
       ? await select({
           message: 'Which link should the DM send?',
           choices: [
-            ...productLinks.map((l) => ({ name: l, value: l })),
+            ...linkedProducts.map((p) => ({ name: `${p.description} — ${p.link}`, value: p.link! })),
             { name: 'Another link (type it next)', value: '__other__' },
           ],
         })
@@ -406,9 +410,22 @@ async function stepFunnel(state: InterviewState, accounts: SocialAccount[]): Pro
 }
 
 async function stepAutoReplies(state: InterviewState, accounts: SocialAccount[]): Promise<void> {
-  say(
-    "Comment and message auto-replies are live for all CreatorOS users. Two questions program that agent — your answers drive the automations directly.",
-  );
+  // Optional — the gate comes before any agent programming.
+  const wantsEngagement = await confirm({
+    message: 'Want me to auto-handle comments and messages? (optional — you can turn this on later)',
+    default: true,
+  });
+  if (!wantsEngagement) {
+    state.answers.autoReplies = {
+      comments: { enabled: false, platforms: [], tone: '', escalate: DEFAULT_ESCALATION_TOPICS },
+      messages: { enabled: false, platforms: [], tone: '', escalate: DEFAULT_ESCALATION_TOPICS },
+    };
+    markStepDone(state, 'autoReplies');
+    say("Off for now. Say \"turn on auto-replies\" any time and we'll program the agent then.");
+    return;
+  }
+
+  say('Two questions program that agent — your answers drive the automations directly.');
 
   // Q1: persona — how the agent chats.
   const persona = await askBlock(
@@ -447,25 +464,22 @@ async function stepAutoReplies(state: InterviewState, accounts: SocialAccount[])
   const commentChoices = COMMENT_REPLY_PLATFORMS.filter((p) => connected.has(p));
   const messageChoices = MESSAGE_REPLY_PLATFORMS.filter((p) => connected.has(p));
 
-  const commentsEnabled =
-    commentChoices.length > 0 &&
-    (await confirm({ message: 'Should I auto-reply to comments?', default: true }));
-  const commentPlatforms = commentsEnabled
-    ? await checkbox({
-        message: 'Comment replies on which platforms? (TikTok comments aren\'t supported by CreatorOS)',
-        choices: commentChoices.map((p) => ({ name: platformLabel(p), value: p as string, checked: true })),
-      })
-    : [];
-
-  const messagesEnabled =
-    messageChoices.length > 0 &&
-    (await confirm({ message: 'Should I auto-reply to DMs?', default: true }));
-  const messagePlatforms = messagesEnabled
-    ? await checkbox({
-        message: 'Message replies on which platforms?',
-        choices: messageChoices.map((p) => ({ name: platformLabel(p), value: p as string, checked: true })),
-      })
-    : [];
+  const commentPlatforms =
+    commentChoices.length > 0
+      ? await checkbox({
+          message: "Comment replies on which platforms? (TikTok comments aren't supported by CreatorOS)",
+          choices: commentChoices.map((p) => ({ name: platformLabel(p), value: p as string, checked: true })),
+        })
+      : [];
+  const messagePlatforms =
+    messageChoices.length > 0
+      ? await checkbox({
+          message: 'Message replies on which platforms?',
+          choices: messageChoices.map((p) => ({ name: platformLabel(p), value: p as string, checked: true })),
+        })
+      : [];
+  const commentsEnabled = commentPlatforms.length > 0;
+  const messagesEnabled = messagePlatforms.length > 0;
 
   const tone = state.answers.brand
     ? `${state.answers.brand.voiceAdjectives.join(', ')} — never ${state.answers.brand.voiceNever}`
@@ -598,7 +612,7 @@ async function stepFinish(
       dmMessage:
         state.answers.funnel?.dmMessage ||
         'Hey! Saw your comment — here\'s what you asked for.',
-      link: state.answers.funnel?.link ?? state.answers.brand?.productLinks[0],
+      link: state.answers.funnel?.link ?? state.answers.brand?.products.find((p) => p.link)?.link,
       persona: state.answers.engagement.persona,
       objective: state.answers.engagement.objective,
       objectiveDetail: state.answers.engagement.objectiveDetail,
@@ -658,6 +672,18 @@ async function stepFinish(
   say(`Setup summary:\n${renderSetupSummary(state)}`);
   say(
     "Honest read: the fastest lever from here is consistency — a full content-library/ and the daily-shortform cron beats any single viral swing. Drop 10+ clips into content-library/, and tell me \"schedule the week\". That's my suggested first move.",
+  );
+
+  // The handoff: everything answered is now materialized in kairos/ — this
+  // prompt makes an agent act on all of it. Saved AND printed.
+  const setupPrompt = renderSetupPrompt(state);
+  await writeFile(
+    join(paths.kairosDir, 'SETUP_PROMPT.md'),
+    `# Setup Prompt\n\nPaste this to Kai (or any agent in this repo) to wire everything up:\n\n\`\`\`\n${setupPrompt}\n\`\`\`\n`,
+    'utf8',
+  );
+  say(
+    `One last thing — your setup prompt (also saved to kairos/SETUP_PROMPT.md). Paste it as your first message and I'll wire everything up:\n\n${'─'.repeat(60)}\n${setupPrompt}\n${'─'.repeat(60)}`,
   );
 
   markStepDone(state, 'finish');
