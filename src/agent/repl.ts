@@ -11,6 +11,55 @@ import { buildSystemPrompt } from './systemPrompt.js';
 import { buildToolServer } from './tools.js';
 import { sanitize } from '../util/sanitize.js';
 
+const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const DIM = '\x1b[2m';
+const RESET = '\x1b[0m';
+
+/**
+ * Live feedback while Kai works — the first turn warms the engine for
+ * 10-25s and a silent prompt reads as a hang.
+ */
+class Spinner {
+  private timer: NodeJS.Timeout | null = null;
+  private startedAt = Date.now();
+  private frame = 0;
+  private label = '';
+  private readonly enabled = Boolean(process.stdout.isTTY);
+
+  start(label: string): void {
+    this.label = label;
+    if (!this.enabled) return;
+    if (this.timer) return;
+    this.startedAt = Date.now();
+    process.stdout.write('\x1b[?25l');
+    this.timer = setInterval(() => this.render(), 90);
+    this.render();
+  }
+
+  setLabel(label: string): void {
+    this.label = label;
+    if (this.enabled && this.timer) this.render();
+  }
+
+  private render(): void {
+    const seconds = Math.floor((Date.now() - this.startedAt) / 1000);
+    const frame = FRAMES[this.frame++ % FRAMES.length];
+    process.stdout.write(`\r\x1b[2K  ${frame} ${this.label} ${DIM}${seconds}s${RESET}`);
+  }
+
+  stop(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+      process.stdout.write('\r\x1b[2K\x1b[?25h');
+    }
+  }
+}
+
+function prettyToolName(name: string): string {
+  return name.replace(/^mcp__creatoros__/, '').replace(/_/g, ' ');
+}
+
 const BANNER = `
   ██╗  ██╗ █████╗ ██╗██████╗  ██████╗ ███████╗
   ██║ ██╔╝██╔══██╗██║██╔══██╗██╔═══██╗██╔════╝
@@ -55,6 +104,7 @@ export async function runRepl(
     if (!trimmed) continue;
     if (['exit', 'quit', 'q'].includes(trimmed.toLowerCase())) break;
 
+    const spinner = new Spinner();
     try {
       const turn = query({
         prompt: trimmed,
@@ -68,21 +118,37 @@ export async function runRepl(
         },
       });
 
+      spinner.start(sessionId ? 'kai is thinking…' : 'waking the engine — first reply takes ~15s…');
+
       for await (const message of turn) {
         if (message.type === 'system' && message.subtype === 'init') {
           sessionId = message.session_id;
+          spinner.setLabel('kai is thinking…');
         } else if (message.type === 'assistant') {
+          let printed = false;
           for (const block of message.message.content) {
             if (block.type === 'text' && block.text.trim()) {
+              spinner.stop();
               console.log(`\n${sanitize(block.text.trim())}\n`);
+              printed = true;
+            } else if (block.type === 'tool_use') {
+              spinner.stop();
+              console.log(`  ${DIM}· ${prettyToolName(block.name)}${RESET}`);
             }
           }
-        } else if (message.type === 'result' && message.subtype !== 'success') {
-          console.error(`\n(kai hit a wall: ${message.subtype})\n`);
+          spinner.start(printed ? 'kai is working…' : 'kai is thinking…');
+        } else if (message.type === 'result') {
+          spinner.stop();
+          if (message.subtype !== 'success') {
+            const detail = 'result' in message && message.result ? ` — ${sanitize(String(message.result))}` : '';
+            console.error(`\n(kai hit a wall: ${message.subtype}${detail})\n`);
+          }
         }
       }
     } catch (error) {
       console.error(`\n(kai error: ${sanitize((error as Error).message)})\n`);
+    } finally {
+      spinner.stop();
     }
   }
   console.log('\nKai out. Your scheduled posts publish from CreatorOS servers either way.');
