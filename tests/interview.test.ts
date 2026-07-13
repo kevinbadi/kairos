@@ -49,6 +49,7 @@ describe('interview persistence & resume', () => {
     const state = emptyState();
     markStepDone(state, 'mode');
     markStepDone(state, 'key');
+    markStepDone(state, 'brain');
     markStepDone(state, 'brand');
     state.answers.brand = {
       about: 'Fitness coaching',
@@ -65,7 +66,7 @@ describe('interview persistence & resume', () => {
 
     // Simulate the process being killed and re-run.
     const resumed = await loadState(path);
-    expect(resumed.completed).toEqual(['mode', 'key', 'brand']);
+    expect(resumed.completed).toEqual(['mode', 'key', 'brain', 'brand']);
     expect(nextStep(resumed)).toBe('profiles');
     expect(resumed.answers.brand?.products[0]?.link).toBe('https://coach.example/buy');
   });

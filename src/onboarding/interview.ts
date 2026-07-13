@@ -4,6 +4,7 @@
  * Kairos reads forever after. Resumable: state saves after every step.
  */
 import { checkbox, confirm, input, password, select } from '@inquirer/prompts';
+import { spawnSync } from 'node:child_process';
 import { cp, mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -81,6 +82,12 @@ export async function runInterview(root: string = process.cwd()): Promise<Interv
 
   // ---- Step 2: key(s) + accounts ----
   const client = await stepKey(paths, state);
+
+  // ---- Step 3: the AI brain (Claude plan or API key) ----
+  if (!isStepDone(state, 'brain')) {
+    await stepBrain(state);
+    await saveState(paths.setupStateJson, state);
+  }
 
   // ---- Step 2: brand pack ----
   if (!isStepDone(state, 'brand')) {
@@ -213,6 +220,44 @@ async function collectKeysInteractively(state: InterviewState): Promise<CreatorO
   state.answers.clientLabels = collected.map((entry) => entry.label);
   say(`Working on ${active.label} now. ${collected.length > 1 ? `The other ${collected.length - 1} key(s) are saved and validated.` : ''}`);
   return active.client;
+}
+
+function claudeCliAvailable(): boolean {
+  return spawnSync('claude', ['--version'], { stdio: 'ignore' }).status === 0;
+}
+
+/**
+ * The brain check: Kairos thinks with Claude. Best path is the user's
+ * existing Claude plan via the logged-in claude CLI — zero API keys. An
+ * ANTHROPIC_API_KEY works too. Never blocks setup; just makes sure the
+ * user knows the state of their brain before the REPL needs it.
+ */
+async function stepBrain(state: InterviewState): Promise<void> {
+  if (process.env.ANTHROPIC_API_KEY) {
+    say('AI brain: ANTHROPIC_API_KEY found — I think with that.');
+    markStepDone(state, 'brain');
+    return;
+  }
+  if (claudeCliAvailable()) {
+    say(
+      "AI brain: Claude Code is installed — I run on your Claude plan, no API key needed. (If my first reply ever fails with an auth error, run `claude` once to log in.)",
+    );
+    markStepDone(state, 'brain');
+    return;
+  }
+  say(
+    'I think with Claude, and I need a brain plugged in. Two ways — your plan is the easy one:\n' +
+      '  1. Your Claude plan (recommended): npm i -g @anthropic-ai/claude-code, then run `claude` once and log in.\n' +
+      '  2. An API key: export ANTHROPIC_API_KEY=sk-ant-...',
+  );
+  const ready = await confirm({
+    message: 'Set up now in another terminal — ready? (No is fine; finish setup and plug it in before we chat)',
+    default: true,
+  });
+  if (ready && !claudeCliAvailable() && !process.env.ANTHROPIC_API_KEY) {
+    say("I still can't see it — finishing setup anyway. I'll need the brain when you send your first message.");
+  }
+  markStepDone(state, 'brain');
 }
 
 async function stepKey(paths: KairosPaths, state: InterviewState): Promise<CreatorOSClient> {
@@ -516,7 +561,7 @@ async function stepPathway(state: InterviewState): Promise<void> {
   });
   if (automationTarget === 'railway') {
     say(
-      `For the comment & messaging agents to run autonomously in the cloud, the service needs an AI API key (ANTHROPIC_API_KEY).\n⚠ ${RAILWAY_SPEND_LIMIT_WARNING}`,
+      `For the comment & messaging agents to run autonomously in the cloud, the service needs an AI credential: ANTHROPIC_API_KEY, or — to stay on your Claude plan (Pro/Max) — a long-lived token from \`claude setup-token\` set as CLAUDE_CODE_OAUTH_TOKEN.\n⚠ ${RAILWAY_SPEND_LIMIT_WARNING}`,
     );
   } else {
     say('Local runs use your Claude plan through the claude CLI — no separate AI API key needed.');

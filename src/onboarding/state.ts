@@ -10,6 +10,7 @@ import { dirname } from 'node:path';
 export const INTERVIEW_STEPS = [
   'mode',
   'key',
+  'brain',
   'brand',
   'profiles',
   'funnel',
