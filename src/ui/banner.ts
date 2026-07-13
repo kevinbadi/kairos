@@ -145,37 +145,77 @@ export interface ChecklistItem {
   detail: string;
 }
 
+export interface ChecklistSection {
+  heading: string;
+  items: ChecklistItem[];
+}
+
 /** Everything Kai can actually do and has access to — shown on first run. */
-export const KAIROS_CAPABILITIES: ChecklistItem[] = [
-  { name: 'Post every format', detail: 'shortform, longform, carousels, threads — one call, every account' },
-  { name: 'Scheduled publishing', detail: 'CreatorOS servers publish — your laptop can sleep' },
-  { name: 'Comment auto-replies', detail: 'triaged & answered in your brand voice, sensitive stuff escalated' },
-  { name: 'DM auto-replies', detail: 'X, Instagram, Facebook, Reddit + more' },
-  { name: 'Comments-to-DM funnels', detail: 'keyword comment → automatic DM with your link, click-tracked' },
-  { name: 'Analytics', detail: 'follower growth, best posts, best times, weekly report' },
-  { name: 'Automations', detail: 'all four pillars on crons — this Mac or an always-on cloud' },
-  { name: 'Guardrails', detail: 'endpoint allowlist in code, plan/billing untouchable, keys masked' },
+export const KAIROS_CAPABILITY_SECTIONS: ChecklistSection[] = [
+  {
+    heading: 'Posting — every type',
+    items: [
+      { name: 'Shortform video', detail: 'TikTok, Reels & Shorts simultaneously — one call' },
+      { name: 'Longform video', detail: 'YouTube — title, description, tags' },
+      { name: 'Carousels', detail: 'multi-media posts' },
+      { name: 'Single post / blog-style text', detail: 'every text platform' },
+      { name: 'Threads / tweets', detail: 'native multi-part threads on X, Threads & Bluesky' },
+      { name: 'Multiposting', detail: 'one create, every account at once' },
+      { name: 'Scheduling', detail: 'CreatorOS servers publish — your laptop can sleep' },
+    ],
+  },
+  {
+    heading: 'Analytics',
+    items: [
+      { name: 'Platform analytics', detail: 'follower growth, views, daily metrics' },
+      { name: 'Post analytics', detail: 'per-post performance + best-time data' },
+    ],
+  },
+  {
+    heading: 'Messaging & comments — set up through webhooks',
+    items: [
+      { name: 'Message replies', detail: 'Twitter/X, Instagram, Facebook, Reddit' },
+      { name: 'Comment replies', detail: 'every platform but TikTok — X, IG, FB, Threads, Reddit, YouTube, LinkedIn' },
+      { name: 'Comment-to-DM workflows', detail: 'Facebook & Instagram — keyword comment → automatic DM with your link' },
+    ],
+  },
+  {
+    heading: 'Agent skills',
+    items: [
+      {
+        name: 'Marketing skills, built in',
+        detail: 'KevBuildsApps ships the best marketing skills + tutorials Kai reads directly',
+      },
+    ],
+  },
 ];
 
 /** Animated drop-down checklist: pending ring pops into a cyan check. */
-export async function showChecklist(items: ChecklistItem[], heading: string): Promise<void> {
+export async function showChecklist(sections: ChecklistSection[], heading: string): Promise<void> {
   const stdout = process.stdout;
   if (!isFancy()) {
     console.log(heading);
-    for (const item of items) console.log(`  ✔ ${item.name} — ${item.detail}`);
+    for (const section of sections) {
+      console.log(`\n${section.heading}`);
+      for (const item of section.items) console.log(`  ✔ ${item.name} — ${item.detail}`);
+    }
     console.log('');
     return;
   }
-  stdout.write(`${DIM}${heading}${RESET}\n\n`);
+  stdout.write(`${DIM}${heading}${RESET}\n`);
   stdout.write('\x1b[?25l');
   try {
-    // one item at a time: a pending ring appears, pops into a cyan check,
-    // then holds long enough to actually be read before the next drops in
-    for (const item of items) {
-      stdout.write(`  ${DIM}○ ${item.name}${RESET}`);
-      await sleep(260);
-      stdout.write(`\r\x1b[2K  ${CYAN}✔${RESET} ${SILVER}${item.name}${RESET}${DIM} — ${item.detail}${RESET}\n`);
-      await sleep(430);
+    for (const section of sections) {
+      stdout.write(`\n  ${SILVER}${section.heading}${RESET}\n`);
+      await sleep(220);
+      // one item at a time: a pending ring appears, pops into a cyan check,
+      // then holds long enough to actually be read before the next drops in
+      for (const item of section.items) {
+        stdout.write(`   ${DIM}○ ${item.name}${RESET}`);
+        await sleep(200);
+        stdout.write(`\r\x1b[2K   ${CYAN}✔${RESET} ${SILVER}${item.name}${RESET}${DIM} — ${item.detail}${RESET}\n`);
+        await sleep(330);
+      }
     }
     stdout.write('\n');
   } finally {
@@ -190,5 +230,5 @@ export async function showChecklist(items: ChecklistItem[], heading: string): Pr
 export async function showIntro(): Promise<void> {
   await showWordmark('CREATOR OS', 'the operating system for social media', CREATOROS_STOPS);
   await showWordmark('KAIROS', 'your CreatorOS agent · posts · replies · reports', KAIROS_STOPS);
-  await showChecklist(KAIROS_CAPABILITIES, "what Kai runs for you");
+  await showChecklist(KAIROS_CAPABILITY_SECTIONS, 'what Kai runs for you');
 }

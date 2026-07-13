@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { KAIROS_CAPABILITIES, showIntro } from '../src/ui/banner.js';
+import { KAIROS_CAPABILITY_SECTIONS, showIntro } from '../src/ui/banner.js';
 
 describe('first-run intro', () => {
   let lines: string[];
@@ -20,19 +20,37 @@ describe('first-run intro', () => {
     expect(creatorosAt).toBeGreaterThanOrEqual(0);
     expect(kairosAt).toBeGreaterThan(creatorosAt);
     expect(checksAt).toBeGreaterThan(kairosAt);
-    // every capability gets its checkmark line
-    for (const item of KAIROS_CAPABILITIES) {
-      expect(output).toContain(`✔ ${item.name} — ${item.detail}`);
+    // every capability in every section gets its checkmark line
+    for (const section of KAIROS_CAPABILITY_SECTIONS) {
+      expect(output).toContain(section.heading);
+      for (const item of section.items) {
+        expect(output).toContain(`✔ ${item.name} — ${item.detail}`);
+      }
     }
   });
 
-  it('the checklist covers the four pillars and the guardrails', () => {
-    const text = KAIROS_CAPABILITIES.map((c) => `${c.name} ${c.detail}`).join(' ').toLowerCase();
-    expect(text).toContain('post');
-    expect(text).toContain('automations');
-    expect(text).toContain('auto-replies');
-    expect(text).toContain('analytics');
-    expect(text).toContain('allowlist');
+  it('covers the capability surface: posting types, analytics, messaging matrix, agent skills', () => {
+    const text = KAIROS_CAPABILITY_SECTIONS.map(
+      (s) => `${s.heading} ${s.items.map((i) => `${i.name} ${i.detail}`).join(' ')}`,
+    )
+      .join(' ')
+      .toLowerCase();
+    // posting types
+    for (const needle of ['shortform', 'longform', 'carousels', 'blog-style', 'threads', 'multiposting', 'scheduling']) {
+      expect(text).toContain(needle);
+    }
+    // analytics
+    expect(text).toContain('follower growth');
+    expect(text).toContain('post analytics');
+    // messaging & comments matrix
+    expect(text).toContain('webhooks');
+    expect(text).toContain('every platform but tiktok');
+    expect(text).toContain('comment-to-dm');
+    expect(text).toContain('facebook & instagram');
+    // agent skills
+    expect(text).toContain('kevbuildsapps');
+    expect(text).toContain('tutorials');
+    // branding
     expect(text).not.toMatch(/zernio/i);
   });
 });
