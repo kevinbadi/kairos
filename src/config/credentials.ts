@@ -22,8 +22,28 @@ export async function resolveApiKey(): Promise<string | null> {
   }
 }
 
+export interface StoredCredentials {
+  /** The key for the workspace being run right now. */
+  apiKey: string;
+  /** Agency mode: one CreatorOS key per client brand. */
+  keys?: Array<{ label: string; apiKey: string }>;
+}
+
 export async function saveApiKey(apiKey: string): Promise<void> {
+  await saveCredentials({ apiKey });
+}
+
+export async function saveCredentials(credentials: StoredCredentials): Promise<void> {
   await mkdir(CREDENTIALS_DIR, { recursive: true });
-  await writeFile(CREDENTIALS_PATH, `${JSON.stringify({ apiKey }, null, 2)}\n`, 'utf8');
+  let existing: Partial<StoredCredentials> = {};
+  if (existsSync(CREDENTIALS_PATH)) {
+    try {
+      existing = JSON.parse(await readFile(CREDENTIALS_PATH, 'utf8')) as StoredCredentials;
+    } catch {
+      existing = {};
+    }
+  }
+  const merged = { ...existing, ...credentials };
+  await writeFile(CREDENTIALS_PATH, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
   await chmod(CREDENTIALS_PATH, 0o600);
 }

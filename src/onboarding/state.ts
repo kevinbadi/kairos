@@ -8,6 +8,7 @@ import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export const INTERVIEW_STEPS = [
+  'mode',
   'key',
   'brand',
   'profiles',
@@ -36,6 +37,10 @@ export interface InterviewState {
   /** Steps already completed, in order. */
   completed: InterviewStep[];
   answers: {
+    /** Question #1: is this an agency running client brands, or a creator? */
+    mode?: 'creator' | 'agency';
+    /** Agency client labels only — the keys themselves never land in the workspace. */
+    clientLabels?: string[];
     brand?: BrandAnswers;
     profiles?: Array<{ accountId: string; platform: string; username: string }>;
     funnel?: {

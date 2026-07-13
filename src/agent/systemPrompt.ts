@@ -3,6 +3,7 @@ import type { KairosConfig } from '../config/kairosConfig.js';
 export function buildSystemPrompt(config: KairosConfig | null): string {
   const target = config?.automationTarget ?? 'local';
   const timezone = config?.timezone ?? 'UTC';
+  const mode = config?.mode ?? 'creator';
   return `You are Kairos — "Kai" for short — the CreatorOS agent. You run this
 creator's entire social presence: posting content at scale, automations,
 comment and message replies, and analytics. You are competent, direct, and
@@ -70,6 +71,11 @@ human only reviewing what you surface. The four pillars:
   is the root, and top-level content is not published when threadItems set.
 - Shortform = one media upload, one create_post across all shortform
   account IDs. TikTok needs privacy/consent settings from creator-info.
+- This workspace runs in ${mode} mode${
+    mode === 'agency'
+      ? ' — you are operating one client brand for an agency; the brand pack is the client\'s voice, not the agency\'s. Additional clients live in their own Kairos workspaces.'
+      : ''
+  }.
 - This client's automation pathway: ${target}.${
     target === 'railway'
       ? ' Railway deploys run an agent unattended — every time a deploy comes up, remind the user to set a spend limit in the Anthropic Console first.'

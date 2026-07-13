@@ -27,6 +27,8 @@ export interface AutoReplyConfig {
 
 export interface KairosConfig {
   version: 1;
+  /** Agency running client brands, or a creator running their own. */
+  mode?: 'creator' | 'agency';
   automationTarget: AutomationTarget;
   timezone: string;
   profileId?: string;

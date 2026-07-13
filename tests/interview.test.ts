@@ -20,15 +20,34 @@ async function tmpStatePath(): Promise<string> {
 }
 
 describe('interview persistence & resume', () => {
-  it('starts empty with the key step first', () => {
+  it('starts empty with the agency-or-creator question first, then the key', () => {
     const state = emptyState();
-    expect(nextStep(state)).toBe('key');
+    expect(nextStep(state)).toBe('mode');
     expect(isInterviewComplete(state)).toBe(false);
+    markStepDone(state, 'mode');
+    expect(nextStep(state)).toBe('key');
+  });
+
+  it('records agency mode with client labels but never the keys themselves', async () => {
+    const path = await tmpStatePath();
+    const state = emptyState();
+    state.answers.mode = 'agency';
+    state.answers.clientLabels = ['Acme Fitness', 'Bolt Coffee'];
+    markStepDone(state, 'mode');
+    await saveState(path, state);
+    const { readFile } = await import('node:fs/promises');
+    const raw = await readFile(path, 'utf8');
+    expect(raw).toContain('Acme Fitness');
+    expect(raw).not.toMatch(/sk_[0-9a-f]/i);
+    const resumed = await loadState(path);
+    expect(resumed.answers.mode).toBe('agency');
+    expect(nextStep(resumed)).toBe('key');
   });
 
   it('persists every step and resumes from the next one', async () => {
     const path = await tmpStatePath();
     const state = emptyState();
+    markStepDone(state, 'mode');
     markStepDone(state, 'key');
     markStepDone(state, 'brand');
     state.answers.brand = {
@@ -47,7 +66,7 @@ describe('interview persistence & resume', () => {
 
     // Simulate the process being killed and re-run.
     const resumed = await loadState(path);
-    expect(resumed.completed).toEqual(['key', 'brand']);
+    expect(resumed.completed).toEqual(['mode', 'key', 'brand']);
     expect(nextStep(resumed)).toBe('profiles');
     expect(resumed.answers.brand?.productLinks).toEqual(['https://coach.example/buy']);
   });

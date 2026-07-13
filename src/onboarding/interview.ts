@@ -18,7 +18,7 @@ import {
 import type { SocialAccount } from '../client/types.js';
 import { maskKey } from '../util/mask.js';
 import { kairosPaths, type KairosPaths } from '../paths.js';
-import { resolveApiKey, saveApiKey } from '../config/credentials.js';
+import { resolveApiKey, saveApiKey, saveCredentials } from '../config/credentials.js';
 import {
   DEFAULT_ESCALATION_TOPICS,
   saveConfig,
@@ -64,7 +64,13 @@ export async function runInterview(root: string = process.cwd()): Promise<Interv
       : "Hey — I'm Kai. I run your social presence on CreatorOS: posting at scale, automations, replies, analytics. Before I touch anything, brief me. This takes about five minutes and I'll remember all of it.",
   );
 
-  // ---- Step 1: key + accounts ----
+  // ---- Question #1: agency or creator ----
+  if (!isStepDone(state, 'mode')) {
+    await stepMode(state);
+    await saveState(paths.setupStateJson, state);
+  }
+
+  // ---- Step 2: key(s) + accounts ----
   const client = await stepKey(paths, state);
 
   // ---- Step 2: brand pack ----
@@ -107,35 +113,111 @@ export async function runInterview(root: string = process.cwd()): Promise<Interv
   return { client, config };
 }
 
-async function stepKey(paths: KairosPaths, state: InterviewState): Promise<CreatorOSClient> {
-  let key = await resolveApiKey();
-  let client: CreatorOSClient | null = key ? new CreatorOSClient({ apiKey: key }) : null;
+async function stepMode(state: InterviewState): Promise<void> {
+  const mode = await select({
+    message: 'Question #1 — who am I working for?',
+    choices: [
+      {
+        name: 'Creator — this is my own brand',
+        value: 'creator' as const,
+      },
+      {
+        name: 'Agency — I run socials for client brands',
+        value: 'agency' as const,
+      },
+    ],
+  });
+  state.answers.mode = mode;
+  markStepDone(state, 'mode');
+  say(
+    mode === 'agency'
+      ? "Agency it is. Each client brand has its own CreatorOS API key (their app → Settings → API Key) — we'll collect them next and set up your first client now. Each additional client gets its own Kairos workspace folder later."
+      : 'Creator — perfect, one brand, full focus.',
+  );
+}
 
+/** Collect and validate one key on a loop until it passes shape + live check. */
+async function collectValidKey(promptMessage: string): Promise<{ key: string; client: CreatorOSClient }> {
   while (true) {
-    if (!key) {
-      say(
-        'First: your CreatorOS API key. Grab it from the CreatorOS iOS app → Settings → API Key (it starts with sk_).',
-      );
-      key = (await password({ message: 'Paste your CreatorOS API key:', mask: '*' })).trim();
-    }
+    const key = (await password({ message: promptMessage, mask: '*' })).trim();
     if (!isValidKeyShape(key)) {
       console.log(
         "That doesn't look like a CreatorOS API key (expected sk_ + 64 hex characters). Check the CreatorOS app under Settings → API Key.",
       );
-      key = null;
       continue;
     }
-    client = new CreatorOSClient({ apiKey: key });
+    const client = new CreatorOSClient({ apiKey: key });
     process.stdout.write(`Checking ${maskKey(key)} against CreatorOS servers... `);
     const valid = await client.validateKey();
     if (!valid) {
       console.log('rejected. Double-check it in the CreatorOS app and paste it again.');
-      key = null;
       continue;
     }
     console.log('valid.');
+    return { key, client };
+  }
+}
+
+/** Creator: one key. Agency: one key per client brand, pick who we set up now. */
+async function collectKeysInteractively(state: InterviewState): Promise<CreatorOSClient> {
+  if (state.answers.mode !== 'agency') {
+    say(
+      'Your CreatorOS API key — grab it from the CreatorOS iOS app → Settings → API Key (it starts with sk_).',
+    );
+    const { key, client } = await collectValidKey('Paste your CreatorOS API key:');
     await saveApiKey(key);
-    break;
+    return client;
+  }
+
+  say(
+    "Client keys — one per brand, from each client's CreatorOS app → Settings → API Key. Paste them one at a time; I'll validate each.",
+  );
+  const collected: Array<{ label: string; apiKey: string; client: CreatorOSClient }> = [];
+  while (true) {
+    const label = (
+      await input({
+        message: `Client ${collected.length + 1} name:`,
+        validate: (v) => v.trim().length > 0 || 'A name so we can tell the keys apart.',
+      })
+    ).trim();
+    const { key, client } = await collectValidKey(`CreatorOS API key for ${label}:`);
+    collected.push({ label, apiKey: key, client });
+    const more = await confirm({ message: 'Add another client key?', default: false });
+    if (!more) break;
+  }
+
+  const activeIndex =
+    collected.length === 1
+      ? 0
+      : await select({
+          message: 'Which client are we setting up right now? (the rest stay saved for their own workspaces)',
+          choices: collected.map((entry, index) => ({ name: entry.label, value: index })),
+        });
+  const active = collected[activeIndex]!;
+  await saveCredentials({
+    apiKey: active.apiKey,
+    keys: collected.map(({ label, apiKey }) => ({ label, apiKey })),
+  });
+  state.answers.clientLabels = collected.map((entry) => entry.label);
+  say(`Working on ${active.label} now. ${collected.length > 1 ? `The other ${collected.length - 1} key(s) are saved and validated.` : ''}`);
+  return active.client;
+}
+
+async function stepKey(paths: KairosPaths, state: InterviewState): Promise<CreatorOSClient> {
+  let client: CreatorOSClient;
+
+  const envKey = await resolveApiKey();
+  if (envKey && isValidKeyShape(envKey)) {
+    client = new CreatorOSClient({ apiKey: envKey });
+    process.stdout.write(`Found a saved key — checking ${maskKey(envKey)}... `);
+    if (await client.validateKey()) {
+      console.log('valid.');
+    } else {
+      console.log('rejected — let\'s get a fresh one.');
+      client = await collectKeysInteractively(state);
+    }
+  } else {
+    client = await collectKeysInteractively(state);
   }
 
   const { accounts } = await client!.listAccounts();
@@ -405,6 +487,7 @@ async function stepFinish(
   const profileId = typeof accounts[0]?.profileId === 'string' ? accounts[0]?.profileId : accounts[0]?.profileId?._id;
   const config: KairosConfig = {
     version: 1,
+    mode: state.answers.mode ?? 'creator',
     automationTarget: pathway.automationTarget,
     timezone: pathway.timezone,
     profileId,
