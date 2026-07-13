@@ -202,30 +202,55 @@ function printHelp(): void {
 }
 
 /**
- * Bordered input box, cursor inside — the Claude Code look:
- *   ╭──────────────╮
- *   │ ❯ type here
- *   ╰──────────────╯
+ * Double-rule input, the Claude Code look — a full-width line above AND
+ * below the prompt:
+ *   ────────────────────────────
+ *   ❯ type here
+ *   ────────────────────────────
+ * readline clears everything below the cursor on every keystroke, so the
+ * bottom rule is repainted after each key (cursor save/restore, scheduled
+ * after readline's own refresh).
  */
 async function readUserInput(): Promise<string | null> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: Boolean(process.stdin.isTTY) });
-  try {
-    if (!process.stdout.isTTY) {
-      const answer = await rl.question('❯ ');
-      return answer;
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: false });
+    try {
+      return await rl.question('❯ ');
+    } catch {
+      return null;
+    } finally {
+      rl.close();
     }
-    padBottom();
-    const width = Math.min(process.stdout.columns || 80, 100) - 2;
-    process.stdout.write(`\n${DIM}╭${'─'.repeat(width)}╮${RESET}\n`);
-    process.stdout.write('\n');
-    process.stdout.write(`${DIM}╰${'─'.repeat(width)}╯${RESET}`);
-    process.stdout.write('\x1b[1A\r'); // cursor up into the box
-    const answer = await rl.question(`${DIM}│${RESET} ${BOLD}${CYAN}❯${RESET} `);
-    process.stdout.write('\x1b[1B\r\n'); // step past the bottom border
+  }
+
+  padBottom();
+  const width = process.stdout.columns || 80;
+  const rule = `${DIM}${'─'.repeat(width)}${RESET}`;
+  process.stdout.write(`\n${rule}\n`);
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+  let active = true;
+  const repaintBottomRule = () => {
+    if (!active) return;
+    // save cursor → one row down → repaint the rule → restore cursor
+    process.stdout.write(`\x1b7\x1b[1B\r\x1b[2K${rule}\x1b8`);
+  };
+  const onKeystroke = () => setImmediate(repaintBottomRule);
+  process.stdin.on('data', onKeystroke);
+  setImmediate(repaintBottomRule);
+
+  try {
+    const answer = await rl.question(`${BOLD}${CYAN}❯${RESET} `);
+    active = false;
+    // Enter moved the cursor onto the bottom-rule row — leave it clean.
+    process.stdout.write(`\r\x1b[2K${rule}\n`);
     return answer;
   } catch {
+    active = false;
     return null;
   } finally {
+    active = false;
+    process.stdin.off('data', onKeystroke);
     rl.close();
   }
 }
