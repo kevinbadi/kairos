@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+// The `kai` command — open a Kai session from any terminal, anywhere.
+// Register it once with `npm link` (from this repo), then just type `kai`.
+//
+// Sessions do NOT merge: each terminal is its own conversation with its
+// own memory. What every session DOES share is the workspace — kairos/
+// brand pack, config, credentials, content-library/ — because the command
+// always anchors to this install's directory, not the shell's cwd.
+import { spawnSync } from 'node:child_process';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+// Same first-run safety net as npm start: install deps if they're missing.
+const deps = spawnSync(process.execPath, [join(root, 'scripts', 'ensure-deps.mjs')], {
+  cwd: root,
+  stdio: 'inherit',
+});
+if (deps.status !== 0) process.exit(deps.status ?? 1);
+
+const tsx = join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'tsx.cmd' : 'tsx');
+const run = spawnSync(tsx, [join(root, 'src', 'index.ts'), 'creatoros', 'kai'], {
+  cwd: root,
+  stdio: 'inherit',
+});
+process.exit(run.status ?? 0);

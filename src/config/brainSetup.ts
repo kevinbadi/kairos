@@ -94,12 +94,16 @@ export async function promptBrainChoice(): Promise<BrainConfig> {
 
 /**
  * Live-verify a brain with a real round-trip; on failure, loop with
- * retry / reconfigure / continue-anyway. Returns the working config.
+ * retry / reconfigure until one actually answers. Nothing moves forward
+ * on a dead brain — Ctrl+C pauses, and onboarding resumes at this step.
  */
 export async function verifyBrainInteractive(initial: BrainConfig): Promise<BrainConfig> {
   let brain = initial;
   while (true) {
-    process.stdout.write(`Checking the brain (${describeBrain(brain)}) with a live round-trip… `);
+    const planPath = brain.provider === 'claude' && !process.env.ANTHROPIC_API_KEY;
+    process.stdout.write(
+      `Checking the brain (${describeBrain(brain)}) with a live round-trip${planPath ? ' — a plan login takes ~20s to answer' : ''}… `,
+    );
     const check = await verifyBrain(brain);
     if (check.ok) {
       console.log(`connected via ${check.via}.`);
@@ -107,22 +111,21 @@ export async function verifyBrainInteractive(initial: BrainConfig): Promise<Brai
     }
     console.log(`failed.\n  ${check.detail ?? 'no detail'}`);
     const next = await select({
-      message: 'The brain check failed — what now?',
+      message: "I can't move forward without a working brain — what now?",
       choices: [
         { name: 'Try again (I fixed it)', value: 'retry' as const },
         { name: 'Pick a different model / fix the details', value: 'reconfigure' as const },
-        { name: 'Continue anyway (I need a working brain before we chat)', value: 'continue' as const },
       ],
     });
-    if (next === 'continue') return brain;
     if (next === 'reconfigure') brain = await promptBrainChoice();
   }
 }
 
 /**
- * REPL-start readiness: fast checks only (no live ping — the first turn
- * surfaces real errors). If the Claude connection is missing or a custom
- * brain lost its key, the first question is which model to use.
+ * REPL-start readiness. Healthy starts stay fast (no live ping — the first
+ * turn surfaces real errors). But if the Claude connection is missing or a
+ * custom brain lost its key, the first question is which model to use, and
+ * that choice fully initializes — a live round-trip — before any chat.
  */
 export async function ensureBrainReady(settings: BrainSettings | undefined): Promise<BrainConfig> {
   const hydrated = await hydrateBrain(settings);
@@ -133,7 +136,7 @@ export async function ensureBrainReady(settings: BrainSettings | undefined): Pro
   } else {
     console.log('\nThe Claude connection failed — no Claude Code login and no ANTHROPIC_API_KEY found.');
   }
-  return promptBrainChoice();
+  return verifyBrainInteractive(await promptBrainChoice());
 }
 
 export function describeBrain(brain: BrainConfig | BrainSettings | undefined): string {

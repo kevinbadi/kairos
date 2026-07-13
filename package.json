@@ -7,6 +7,9 @@
   "engines": {
     "node": ">=20"
   },
+  "bin": {
+    "kai": "bin/kai.mjs"
+  },
   "scripts": {
     "prestart": "node scripts/ensure-deps.mjs",
     "start": "tsx src/index.ts",

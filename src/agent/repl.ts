@@ -8,12 +8,14 @@
 import { createInterface } from 'node:readline/promises';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { CreatorOSClient } from '../client/client.js';
-import type { KairosConfig } from '../config/kairosConfig.js';
+import { saveConfig, type KairosConfig } from '../config/kairosConfig.js';
 import type { BrainConfig } from '../util/brain.js';
-import { describeBrain, ensureBrainReady } from '../config/brainSetup.js';
+import { describeBrain, ensureBrainReady, toSettings } from '../config/brainSetup.js';
+import { kairosPaths } from '../paths.js';
 import { buildSystemPrompt } from './systemPrompt.js';
 import { buildToolServer } from './tools.js';
 import { sanitize } from '../util/sanitize.js';
+import { mdToAnsi } from '../ui/markdown.js';
 
 const RESET = '\x1b[0m';
 const DIM = '\x1b[2m';
@@ -32,6 +34,19 @@ const BANNER = `
   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
 `;
 
+/**
+ * Keep the chat floating a few rows off the terminal floor — content glued
+ * to the very bottom edge reads badly. Reserves blank rows below the
+ * cursor (scrolls if needed), then puts the cursor back.
+ */
+const BOTTOM_PAD = 3;
+function padBottom(): void {
+  if (!process.stdout.isTTY) return;
+  process.stdout.write('\n'.repeat(BOTTOM_PAD) + `\x1b[${BOTTOM_PAD}A`);
+}
+
+const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
 class Spinner {
   private timer: NodeJS.Timeout | null = null;
   private startedAt = Date.now();
@@ -42,6 +57,7 @@ class Spinner {
   start(label: string): void {
     this.label = label;
     if (!this.enabled || this.timer) return;
+    padBottom();
     this.startedAt = Date.now();
     process.stdout.write('\x1b[?25l');
     this.timer = setInterval(() => this.render(), 110);
@@ -92,10 +108,40 @@ function armEscInterrupt(onEsc: () => void): () => void {
   };
 }
 
-function printAssistantText(text: string): void {
-  const lines = sanitize(text.trim()).split('\n');
-  console.log(`\n${CYAN}⏺${RESET} ${lines[0] ?? ''}`);
-  for (const line of lines.slice(1)) console.log(`  ${line}`);
+/**
+ * Type Kai's reply on, Claude-Code style. Markdown is converted to ANSI
+ * styling (no raw asterisks), and long replies speed up so the animation
+ * never drags.
+ */
+async function printAssistantText(text: string): Promise<void> {
+  const rendered = mdToAnsi(sanitize(text.trim()));
+  const lines = rendered.split('\n');
+  if (!process.stdout.isTTY) {
+    console.log(`\n${CYAN}⏺${RESET} ${lines[0] ?? ''}`);
+    for (const line of lines.slice(1)) console.log(`  ${line}`);
+    return;
+  }
+  const plainLength = rendered.replace(/\x1b\[[0-9;]*m/g, '').length;
+  const delay = plainLength > 900 ? 1 : plainLength > 300 ? 2 : 5;
+  process.stdout.write(`\n${CYAN}⏺${RESET} `);
+  for (let index = 0; index < lines.length; index++) {
+    if (index > 0) process.stdout.write('\n  ');
+    const line = lines[index] ?? '';
+    // type visible chars; write ANSI escape sequences instantly
+    let i = 0;
+    while (i < line.length) {
+      if (line[i] === '\x1b') {
+        const end = line.indexOf('m', i);
+        process.stdout.write(line.slice(i, end === -1 ? line.length : end + 1));
+        i = end === -1 ? line.length : end + 1;
+        continue;
+      }
+      process.stdout.write(line[i]!);
+      if (line[i] !== ' ') await sleep(delay);
+      i++;
+    }
+  }
+  process.stdout.write('\n');
 }
 
 function printToolLine(name: string, args?: unknown): void {
@@ -117,13 +163,15 @@ function printHelp(): void {
       `  /setup  print your setup prompt (kairos/SETUP_PROMPT.md)\n` +
       `  /help   this\n` +
       `  exit    leave (scheduled posts publish from CreatorOS servers either way)\n` +
-      `  esc     interrupt Kai mid-turn${RESET}\n`,
+      `  esc     interrupt Kai mid-turn\n` +
+      `  kai     in another terminal: a second, independent session on this same workspace${RESET}\n`,
   );
 }
 
 async function readUserInput(): Promise<string | null> {
   const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: Boolean(process.stdin.isTTY) });
   try {
+    padBottom();
     const rule = '─'.repeat(Math.min(60, process.stdout.columns || 60));
     process.stdout.write(`${DIM}${rule}${RESET}\n`);
     const answer = await rl.question(`${BOLD}${CYAN}❯ ${RESET}`);
@@ -147,6 +195,15 @@ export async function runRepl(
     brain = await ensureBrainReady(config?.brain);
   } catch {
     return; // ctrl-c during the chooser
+  }
+
+  // A brain reconfigured at startup is remembered — next run skips the question.
+  if (config) {
+    const settings = toSettings(brain);
+    if (JSON.stringify(settings) !== JSON.stringify(config.brain ?? { provider: 'claude' })) {
+      config.brain = settings;
+      await saveConfig(kairosPaths(workspaceRoot).configJson, config);
+    }
   }
 
   console.log(BANNER);
@@ -223,7 +280,7 @@ export async function runRepl(
             for (const block of message.message.content) {
               if (block.type === 'text' && block.text.trim()) {
                 spinner.stop();
-                printAssistantText(block.text);
+                await printAssistantText(block.text);
               } else if (block.type === 'tool_use') {
                 spinner.stop();
                 printToolLine(block.name, block.input);

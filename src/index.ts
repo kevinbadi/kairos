@@ -31,6 +31,10 @@ export function usage(): string {
     'Usage:',
     '  npm start creatoros kairos    start Kairos (first run = onboarding interview)',
     '  npm start creatoros kai       same thing, shorter',
+    '  kai                           open a session from any terminal (run `npm link` once to enable)',
+    '',
+    'Sessions are independent conversations — open as many terminals as you like;',
+    'they all share the same kairos/ workspace, brand pack, and credentials.',
   ].join('\n');
 }
 
@@ -57,6 +61,10 @@ async function main(): Promise<void> {
     const { client, config } = await runInterview(paths.root);
     const { runRepl } = await import('./agent/repl.js');
     console.log("\nSetup complete. You're talking to Kai now — try \"how do my socials look?\"");
+    console.log(
+      '\x1b[2mTip: run `npm link` once in this repo and `kai` opens a session from any terminal. ' +
+        'Each terminal is its own conversation; they all share this workspace.\x1b[0m',
+    );
     await runRepl(client, config, paths.root);
     return;
   }
