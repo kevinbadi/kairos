@@ -14,8 +14,7 @@ The end state Kai drives toward: all four pillars on cron jobs — content posti
 ## Quick start
 
 ```sh
-# 1. Fork & clone, then:
-npm install
+# 1. Fork & clone. (No npm install needed — first start installs for you.)
 
 # 2. You need two keys:
 #    - CreatorOS API key (CreatorOS iOS app → Settings → API Key, sk_...)

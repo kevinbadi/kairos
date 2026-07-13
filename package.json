@@ -8,7 +8,9 @@
     "node": ">=20"
   },
   "scripts": {
+    "prestart": "node scripts/ensure-deps.mjs",
     "start": "tsx src/index.ts",
+    "pretest": "node scripts/ensure-deps.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
