@@ -47,6 +47,31 @@ function padBottom(): void {
 
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
+const stripAnsi = (text: string): string => text.replace(/\x1b\[[0-9;]*m/g, '');
+const visibleLength = (text: string): number => stripAnsi(text).length;
+
+/** ANSI-aware word wrap — codes travel with their words, width counts glyphs. */
+function wrapLine(line: string, width: number): string[] {
+  if (visibleLength(line) <= width) return [line];
+  const words = line.split(' ');
+  const wrapped: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (current && visibleLength(current) + 1 + visibleLength(word) > width) {
+      wrapped.push(current);
+      current = word;
+    } else {
+      current = current ? `${current} ${word}` : word;
+    }
+  }
+  if (current) wrapped.push(current);
+  return wrapped;
+}
+
+function chatWidth(): number {
+  return Math.min((process.stdout.columns || 80) - 4, 96);
+}
+
 class Spinner {
   private timer: NodeJS.Timeout | null = null;
   private startedAt = Date.now();
@@ -115,30 +140,22 @@ function armEscInterrupt(onEsc: () => void): () => void {
  */
 async function printAssistantText(text: string): Promise<void> {
   const rendered = mdToAnsi(sanitize(text.trim()));
-  const lines = rendered.split('\n');
+  const lines = rendered.split('\n').flatMap((line) => wrapLine(line, chatWidth()));
   if (!process.stdout.isTTY) {
     console.log(`\n${CYAN}⏺${RESET} ${lines[0] ?? ''}`);
     for (const line of lines.slice(1)) console.log(`  ${line}`);
     return;
   }
-  const plainLength = rendered.replace(/\x1b\[[0-9;]*m/g, '').length;
-  const delay = plainLength > 900 ? 1 : plainLength > 300 ? 2 : 5;
+  // Stream word-by-word at reading pace, like watching the model write.
+  const plainLength = visibleLength(rendered);
+  const wordDelay = plainLength > 1200 ? 16 : plainLength > 500 ? 26 : 38;
   process.stdout.write(`\n${CYAN}⏺${RESET} `);
   for (let index = 0; index < lines.length; index++) {
     if (index > 0) process.stdout.write('\n  ');
-    const line = lines[index] ?? '';
-    // type visible chars; write ANSI escape sequences instantly
-    let i = 0;
-    while (i < line.length) {
-      if (line[i] === '\x1b') {
-        const end = line.indexOf('m', i);
-        process.stdout.write(line.slice(i, end === -1 ? line.length : end + 1));
-        i = end === -1 ? line.length : end + 1;
-        continue;
-      }
-      process.stdout.write(line[i]!);
-      if (line[i] !== ' ') await sleep(delay);
-      i++;
+    const words = (lines[index] ?? '').split(' ');
+    for (let w = 0; w < words.length; w++) {
+      process.stdout.write((w > 0 ? ' ' : '') + words[w]);
+      await sleep(wordDelay);
     }
   }
   process.stdout.write('\n');
@@ -157,6 +174,22 @@ function printToolLine(name: string, args?: unknown): void {
   console.log(`${SILVER}⏺${RESET} ${DIM}${pretty}${preview}${RESET}`);
 }
 
+/** Compact ⎿ summary under a tool call, Claude-Code style. */
+function printToolResult(block: { content?: unknown; is_error?: boolean }): void {
+  let text = '';
+  if (typeof block.content === 'string') {
+    text = block.content;
+  } else if (Array.isArray(block.content)) {
+    text = block.content
+      .map((part: { type?: string; text?: string }) => (part.type === 'text' ? (part.text ?? '') : ''))
+      .join(' ');
+  }
+  const flat = sanitize(text).replace(/\s+/g, ' ').trim();
+  const summary = flat.length > 76 ? `${flat.slice(0, 73)}…` : flat || 'done';
+  const color = block.is_error ? '\x1b[38;2;248;113;113m' : DIM;
+  console.log(`  ${DIM}⎿${RESET} ${color}${summary}${RESET}`);
+}
+
 function printHelp(): void {
   console.log(
     `\n${DIM}  /new    start a fresh conversation (Kai forgets this session, keeps kairos/ files)\n` +
@@ -168,19 +201,44 @@ function printHelp(): void {
   );
 }
 
+/**
+ * Bordered input box, cursor inside — the Claude Code look:
+ *   ╭──────────────╮
+ *   │ ❯ type here
+ *   ╰──────────────╯
+ */
 async function readUserInput(): Promise<string | null> {
   const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: Boolean(process.stdin.isTTY) });
   try {
+    if (!process.stdout.isTTY) {
+      const answer = await rl.question('❯ ');
+      return answer;
+    }
     padBottom();
-    const rule = '─'.repeat(Math.min(60, process.stdout.columns || 60));
-    process.stdout.write(`${DIM}${rule}${RESET}\n`);
-    const answer = await rl.question(`${BOLD}${CYAN}❯ ${RESET}`);
+    const width = Math.min(process.stdout.columns || 80, 100) - 2;
+    process.stdout.write(`\n${DIM}╭${'─'.repeat(width)}╮${RESET}\n`);
+    process.stdout.write('\n');
+    process.stdout.write(`${DIM}╰${'─'.repeat(width)}╯${RESET}`);
+    process.stdout.write('\x1b[1A\r'); // cursor up into the box
+    const answer = await rl.question(`${DIM}│${RESET} ${BOLD}${CYAN}❯${RESET} `);
+    process.stdout.write('\x1b[1B\r\n'); // step past the bottom border
     return answer;
   } catch {
     return null;
   } finally {
     rl.close();
   }
+}
+
+/** ANSI-aware boxed welcome card. */
+function printWelcomeCard(lines: string[]): void {
+  const width = Math.max(...lines.map(visibleLength)) + 2;
+  console.log(`  ${DIM}╭${'─'.repeat(width)}╮${RESET}`);
+  for (const line of lines) {
+    const pad = ' '.repeat(width - visibleLength(line) - 1);
+    console.log(`  ${DIM}│${RESET} ${line}${pad}${DIM}│${RESET}`);
+  }
+  console.log(`  ${DIM}╰${'─'.repeat(width)}╯${RESET}`);
 }
 
 export async function runRepl(
@@ -207,9 +265,15 @@ export async function runRepl(
   }
 
   console.log(BANNER);
-  console.log(
-    `${DIM}  the CreatorOS agent · key ${client.maskedKey} · pathway ${config?.automationTarget ?? 'local'} · tz ${config?.timezone ?? 'UTC'} · brain ${describeBrain(brain)}\n  /help for commands${RESET}\n`,
-  );
+  printWelcomeCard([
+    `${AMBER}✻${RESET} ${SILVER}Kai — the CreatorOS agent${RESET}`,
+    '',
+    `${DIM}key${RESET}      ${client.maskedKey}`,
+    `${DIM}pathway${RESET}  ${config?.automationTarget ?? 'local'} · ${config?.timezone ?? 'UTC'}`,
+    `${DIM}brain${RESET}    ${describeBrain(brain)}`,
+    '',
+    `${DIM}/help for commands · esc interrupts a turn${RESET}`,
+  ]);
 
   const systemPrompt = buildSystemPrompt(config);
   const server = buildToolServer(client, workspaceRoot, config);
@@ -287,6 +351,17 @@ export async function runRepl(
               }
             }
             spinner.start('kai is working…');
+          } else if (message.type === 'user') {
+            const content = (message as { message?: { content?: unknown } }).message?.content;
+            if (Array.isArray(content)) {
+              for (const block of content) {
+                if (block && typeof block === 'object' && (block as { type?: string }).type === 'tool_result') {
+                  spinner.stop();
+                  printToolResult(block as { content?: unknown; is_error?: boolean });
+                }
+              }
+              spinner.start('kai is working…');
+            }
           } else if (message.type === 'result') {
             spinner.stop();
             if (message.subtype !== 'success') {
