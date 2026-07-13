@@ -1,0 +1,14 @@
+# User artifacts — never committed (brand pack, profile map, configs, knowledge)
+kairos/
+
+# CLI-compat workspace (skill shims for scheduled runs)
+creatoros/
+
+# Automation deploy scaffolds may embed workspace copies
+deploy/
+
+node_modules/
+dist/
+*.log
+.env
+.DS_Store
