@@ -207,52 +207,106 @@ function printHelp(): void {
  *   ────────────────────────────
  *   ❯ type here
  *   ────────────────────────────
- * readline clears everything below the cursor on every keystroke, so the
- * bottom rule is repainted after each key (cursor save/restore, scheduled
- * after readline's own refresh).
+ * Rendered by hand in raw mode. readline redraws with clear-screen-down
+ * on every keystroke, which eats the bottom rule (and, on the terminal's
+ * last row, painted rules over the prompt itself — ghost ❯ rows, stacked
+ * rules). Owning the three rows outright is the only stable way.
  */
-async function readUserInput(): Promise<string | null> {
+function readUserInput(): Promise<string | null> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: false });
-    try {
-      return await rl.question('❯ ');
-    } catch {
-      return null;
-    } finally {
-      rl.close();
-    }
+    return rl
+      .question('❯ ')
+      .catch(() => null)
+      .finally(() => rl.close()) as Promise<string | null>;
   }
 
-  padBottom();
-  const width = process.stdout.columns || 80;
-  const rule = `${DIM}${'─'.repeat(width)}${RESET}`;
-  process.stdout.write(`\n${rule}\n`);
+  return new Promise((resolve) => {
+    const out = process.stdout;
+    const stdin = process.stdin;
+    padBottom();
+    const rule = () => `${DIM}${'─'.repeat(out.columns || 80)}${RESET}`;
+    const prompt = `${BOLD}${CYAN}❯${RESET} `;
+    const PROMPT_COLS = 2;
 
-  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-  let active = true;
-  const repaintBottomRule = () => {
-    if (!active) return;
-    // save cursor → one row down → repaint the rule → restore cursor
-    process.stdout.write(`\x1b7\x1b[1B\r\x1b[2K${rule}\x1b8`);
-  };
-  const onKeystroke = () => setImmediate(repaintBottomRule);
-  process.stdin.on('data', onKeystroke);
-  setImmediate(repaintBottomRule);
+    // Lay out the three rows, then park the cursor on the input row.
+    out.write(`\n${rule()}\n\x1b[2K\n${rule()}\x1b[1A\r`);
 
-  try {
-    const answer = await rl.question(`${BOLD}${CYAN}❯${RESET} `);
-    active = false;
-    // Enter moved the cursor onto the bottom-rule row — leave it clean.
-    process.stdout.write(`\r\x1b[2K${rule}\n`);
-    return answer;
-  } catch {
-    active = false;
-    return null;
-  } finally {
-    active = false;
-    process.stdin.off('data', onKeystroke);
-    rl.close();
-  }
+    let buffer = '';
+    let pos = 0;
+
+    const redraw = () => {
+      const width = (out.columns || 80) - PROMPT_COLS - 1;
+      const start = pos > width ? pos - width : 0;
+      const visible = buffer.slice(start, start + width);
+      out.write(`\r\x1b[2K${prompt}${visible}\r\x1b[${PROMPT_COLS + (pos - start)}C`);
+    };
+    redraw();
+
+    const wasRaw = stdin.isRaw ?? false;
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+
+    const finish = (result: string | null) => {
+      stdin.off('data', onData);
+      stdin.setRawMode(wasRaw);
+      stdin.pause();
+      out.write('\x1b[1B\r\n'); // step below the bottom rule
+      resolve(result);
+    };
+
+    const onData = (chunk: string) => {
+      let i = 0;
+      while (i < chunk.length) {
+        const ch = chunk[i]!;
+        if (ch === '\x1b') {
+          if (chunk.startsWith('\x1b[D', i)) { pos = Math.max(0, pos - 1); i += 3; continue; }
+          if (chunk.startsWith('\x1b[C', i)) { pos = Math.min(buffer.length, pos + 1); i += 3; continue; }
+          if (chunk.startsWith('\x1b[3~', i)) { buffer = buffer.slice(0, pos) + buffer.slice(pos + 1); i += 4; continue; }
+          if (chunk.startsWith('\x1b[H', i)) { pos = 0; i += 3; continue; }
+          if (chunk.startsWith('\x1b[F', i)) { pos = buffer.length; i += 3; continue; }
+          i += 1; // bare esc / unknown sequence intro — ignore
+          continue;
+        }
+        if (ch === '\r' || ch === '\n') {
+          // Mid-paste newlines become spaces; a final newline submits.
+          if (chunk.slice(i + 1).trim().length > 0) {
+            if (buffer.length > 0 && buffer[pos - 1] !== ' ') {
+              buffer = `${buffer.slice(0, pos)} ${buffer.slice(pos)}`;
+              pos++;
+            }
+            i++;
+            continue;
+          }
+          redraw();
+          finish(buffer);
+          return;
+        }
+        if (ch === '\x03') { out.write('\n'); process.exit(130); }
+        if (ch === '\x04' && buffer.length === 0) { finish(null); return; } // ctrl-d on empty line
+        if (ch === '\x7f' || ch === '\b') {
+          if (pos > 0) { buffer = buffer.slice(0, pos - 1) + buffer.slice(pos); pos--; }
+          i++;
+          continue;
+        }
+        if (ch === '\x01') { pos = 0; i++; continue; } // ctrl-a
+        if (ch === '\x05') { pos = buffer.length; i++; continue; } // ctrl-e
+        if (ch === '\x15') { buffer = buffer.slice(pos); pos = 0; i++; continue; } // ctrl-u
+        if (ch === '\x17') { // ctrl-w: delete word back
+          const head = buffer.slice(0, pos).replace(/\S+\s*$/, '');
+          buffer = head + buffer.slice(pos);
+          pos = head.length;
+          i++;
+          continue;
+        }
+        if (ch >= ' ' || ch === '\t') { buffer = buffer.slice(0, pos) + ch + buffer.slice(pos); pos++; }
+        i++;
+      }
+      redraw();
+    };
+    stdin.on('data', onData);
+  });
 }
 
 /** ANSI-aware boxed welcome card. */
