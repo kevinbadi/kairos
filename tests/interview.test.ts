@@ -20,16 +20,18 @@ async function tmpStatePath(): Promise<string> {
 }
 
 describe('interview persistence & resume', () => {
-  it('starts with the brain, then agency-or-creator, then the INFRASTRUCTURE call before anything else', () => {
+  it('starts with brain, mode, the CreatorOS key, then the infrastructure call — both keys before the rest of the form', () => {
     const state = emptyState();
     expect(nextStep(state)).toBe('brain');
     expect(isInterviewComplete(state)).toBe(false);
     markStepDone(state, 'brain');
     expect(nextStep(state)).toBe('mode');
     markStepDone(state, 'mode');
+    expect(nextStep(state)).toBe('key');
+    markStepDone(state, 'key');
     expect(nextStep(state)).toBe('pathway');
     markStepDone(state, 'pathway');
-    expect(nextStep(state)).toBe('key');
+    expect(nextStep(state)).toBe('brand');
   });
 
   it('records agency mode with client labels but never the keys themselves', async () => {
@@ -47,7 +49,7 @@ describe('interview persistence & resume', () => {
     expect(raw).not.toMatch(/sk_[0-9a-f]/i);
     const resumed = await loadState(path);
     expect(resumed.answers.mode).toBe('agency');
-    expect(nextStep(resumed)).toBe('pathway');
+    expect(nextStep(resumed)).toBe('key');
   });
 
   it('persists every step and resumes from the next one', async () => {
@@ -76,12 +78,13 @@ describe('interview persistence & resume', () => {
     expect(resumed.answers.brand?.products[0]?.link).toBe('https://coach.example/buy');
   });
 
-  it('pathway is early (3rd) and no automation setup steps exist in the form', () => {
+  it('pathway follows the key (4th) and no automation setup steps exist in the form', () => {
     expect(INTERVIEW_STEPS).not.toContain('funnel');
     expect(INTERVIEW_STEPS).not.toContain('autoReplies');
-    expect(INTERVIEW_STEPS.indexOf('pathway')).toBe(2);
+    expect(INTERVIEW_STEPS.indexOf('key')).toBe(2);
+    expect(INTERVIEW_STEPS.indexOf('pathway')).toBe(3);
     const state = emptyState();
-    for (const step of ['brain', 'mode', 'pathway', 'key', 'brand', 'profiles'] as const) markStepDone(state, step);
+    for (const step of ['brain', 'mode', 'key', 'pathway', 'brand', 'profiles'] as const) markStepDone(state, step);
     expect(nextStep(state)).toBe('finish');
   });
 

@@ -8,6 +8,7 @@ import { detectBrain, type BrainConfig } from '../util/brain.js';
 import { promptBrainChoice, toSettings, verifyBrainInteractive } from '../config/brainSetup.js';
 import { cp, mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +17,16 @@ import { platformLabel } from '../client/platformMatrix.js';
 import type { SocialAccount } from '../client/types.js';
 import { maskKey } from '../util/mask.js';
 import { kairosPaths, type KairosPaths } from '../paths.js';
-import { resolveApiKey, saveApiKey, saveCredentials, saveRailwayToken } from '../config/credentials.js';
+import {
+  resolveApiKey,
+  resolveRailwayToken,
+  resolveWorkerAiCredential,
+  saveApiKey,
+  saveCredentials,
+  saveRailwayToken,
+  saveWorkerAiCredential,
+} from '../config/credentials.js';
+import { provisionRailwayWorker } from '../automations/railwayProvision.js';
 import { saveConfig, type KairosConfig } from '../config/kairosConfig.js';
 import {
   isStepDone,
@@ -76,15 +86,15 @@ export async function runInterview(root: string = process.cwd()): Promise<Interv
     await saveState(paths.setupStateJson, state);
   }
 
-  // ---- The infrastructure call, early: everything downstream
-  // initializes against this environment ----
+  // ---- Key(s) + accounts ----
+  const client = await stepKey(paths, state);
+
+  // ---- The infrastructure call — with both keys in hand, the finish
+  // step can provision Railway and light up the dashboard ----
   if (!isStepDone(state, 'pathway')) {
     await stepPathway(state, paths);
     await saveState(paths.setupStateJson, state);
   }
-
-  // ---- Key(s) + accounts ----
-  const client = await stepKey(paths, state);
 
   // ---- Step 2: brand pack ----
   if (!isStepDone(state, 'brand')) {
@@ -400,6 +410,42 @@ async function stepPathway(state: InterviewState, paths: KairosPaths): Promise<v
     await saveRailwayToken(railwayApiToken);
     say('Token saved securely to ~/.kairos (never into this repo).');
   }
+
+  // The cloud worker needs its own AI credential — the local Claude login
+  // doesn't travel. Collected now so the finish step can deploy hands-free.
+  let aiCredentialSaved = false;
+  let spendLimitConfirmed = false;
+  if (railwayApiToken) {
+    const envKey = process.env.ANTHROPIC_API_KEY?.trim();
+    const aiChoice = await select({
+      message: 'AI credential for the cloud worker:',
+      choices: [
+        ...(envKey ? [{ name: `Use the ANTHROPIC_API_KEY already in this environment (${maskKey(envKey)})`, value: 'env' as const }] : []),
+        { name: 'Paste an Anthropic API key', value: 'anthropic' as const },
+        { name: 'Paste a `claude setup-token` token (stays on your Claude Pro/Max plan)', value: 'oauth' as const },
+        { name: 'Skip — I\'ll hand it to Kai in chat before the deploy', value: 'skip' as const },
+      ],
+    });
+    if (aiChoice === 'env' && envKey) {
+      await saveWorkerAiCredential('ANTHROPIC_API_KEY', envKey);
+      aiCredentialSaved = true;
+    } else if (aiChoice === 'anthropic' || aiChoice === 'oauth') {
+      const value = (await password({ message: 'Paste it:', mask: '*' })).trim();
+      if (value) {
+        await saveWorkerAiCredential(aiChoice === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'CLAUDE_CODE_OAUTH_TOKEN', value);
+        aiCredentialSaved = true;
+      }
+    }
+    if (aiCredentialSaved) {
+      spendLimitConfirmed = await confirm({
+        message: 'Is your Anthropic spend limit set (console.anthropic.com → Billing → Limits)? Required before I deploy anything.',
+        default: false,
+      });
+      if (!spendLimitConfirmed) {
+        say("No deploy until it's set, then — I'll hold the launch and you can confirm in chat with \"spend limit is set, build my worker\".");
+      }
+    }
+  }
   const workerUrl = (
     await input({
       message: 'Worker URL, if a Railway worker is already deployed (blank — not yet):',
@@ -457,6 +503,8 @@ How it works once deployed: the worker re-reads kairos/automations.json every 30
     workerUrl: workerUrl || undefined,
     railwayServiceId: railwayServiceId || undefined,
     railwayTokenSaved: Boolean(railwayApiToken),
+    aiCredentialSaved,
+    spendLimitConfirmed,
   };
   markStepDone(state, 'pathway');
 }
@@ -467,8 +515,54 @@ async function stepFinish(
   state: InterviewState,
   accounts: SocialAccount[],
 ): Promise<KairosConfig> {
-  // Persist config + knowledge scaffolding first — the durable artifacts.
   const pathway = state.answers.pathway ?? { automationTarget: 'local' as const, timezone: 'UTC' };
+
+  // Hands-free Railway: everything was collected up front, so the deploy
+  // happens HERE — the user watches, they don't click. Failure never fails
+  // onboarding; chat (provision-railway skill) is the retry vehicle.
+  let provisionedUrl: string | undefined;
+  let provisionedServiceId: string | undefined;
+  if (
+    pathway.automationTarget === 'railway' &&
+    !pathway.workerUrl &&
+    pathway.railwayTokenSaved &&
+    pathway.aiCredentialSaved &&
+    pathway.spendLimitConfirmed &&
+    pathway.workerToken
+  ) {
+    const railwayToken = await resolveRailwayToken();
+    const ai = await resolveWorkerAiCredential();
+    const creatorosKey = await resolveApiKey();
+    if (railwayToken && ai && creatorosKey) {
+      say('Building your Railway environment now — sit back, this is the part you never have to do.');
+      const result = await provisionRailwayWorker(
+        {
+          workspaceRoot: paths.root,
+          railwayToken,
+          timezone: pathway.timezone,
+          workerToken: pathway.workerToken,
+          creatorosKey,
+          ai,
+        },
+        (line) => console.log(`  ${line}`),
+      );
+      if (result.ok) {
+        provisionedUrl = result.url;
+        provisionedServiceId = result.serviceId;
+        say(
+          result.healthy
+            ? `Railway worker is LIVE at ${result.url} — /health verified. Automations you pick in chat run in the cloud from now on.`
+            : `Railway accepted the deploy — the worker is building and will come up at ${result.url}. The dashboard's Automations page shows it the moment it's live.`,
+        );
+      } else {
+        say(
+          `Provisioning hit a wall (${result.error}). No stress — everything is saved; say "build my Railway worker" in our chat and I'll pick it up from the failed step.`,
+        );
+      }
+    }
+  }
+
+  // Persist config + knowledge scaffolding — the durable artifacts.
   const profileId = typeof accounts[0]?.profileId === 'string' ? accounts[0]?.profileId : accounts[0]?.profileId?._id;
   const config: KairosConfig = {
     version: 1,
@@ -477,10 +571,12 @@ async function stepFinish(
     automationTarget: pathway.automationTarget,
     timezone: pathway.timezone,
     profileId,
-    ...(pathway.automationTarget === 'railway' && (pathway.workerUrl || pathway.workerToken)
-      ? { worker: { url: pathway.workerUrl, token: pathway.workerToken } }
+    ...(pathway.automationTarget === 'railway' && (pathway.workerUrl || provisionedUrl || pathway.workerToken)
+      ? { worker: { url: pathway.workerUrl ?? provisionedUrl, token: pathway.workerToken } }
       : {}),
-    ...(pathway.railwayServiceId ? { railway: { serviceId: pathway.railwayServiceId } } : {}),
+    ...(pathway.railwayServiceId || provisionedServiceId
+      ? { railway: { serviceId: pathway.railwayServiceId ?? provisionedServiceId } }
+      : {}),
     // No automations are configured at onboarding — the user picks their
     // set in the first chat, and the agent fills these in with sign-off.
     funnel: { enabled: false, keywords: [], matchMode: 'contains', dmMessage: '', scope: 'account-wide', accountIds: [] },
@@ -510,7 +606,7 @@ async function stepFinish(
   • Recurring analytics reports
 Want none of them? Also fine — everything works manually through chat too.`,
   );
-  if (pathway.automationTarget === 'railway' && !pathway.workerUrl) {
+  if (pathway.automationTarget === 'railway' && !pathway.workerUrl && !provisionedUrl) {
     say(
       pathway.railwayTokenSaved
         ? 'Infrastructure: your Railway token is saved, so the deploy is MY job — first thing in chat, say "build my Railway worker" and I\'ll provision the whole environment. Automations you pick are saved either way and start the moment it\'s live.'
@@ -555,6 +651,16 @@ Want none of them? Also fine — everything works manually through chat too.`,
   say(
     `One last thing — your setup prompt (also saved to kairos/SETUP_PROMPT.md). Paste it as your first message and I'll wire everything up:\n\n${'─'.repeat(60)}\n${setupPrompt}\n${'─'.repeat(60)}`,
   );
+
+  // The dashboard is the home base — offer it running before the goodbye.
+  const openDash = await confirm({
+    message: 'Open your dashboard now? (your socials, agent, and automations in one place)',
+    default: true,
+  });
+  if (openDash) {
+    spawn('npm', ['run', 'dashboard'], { cwd: paths.root, detached: true, stdio: 'ignore' }).unref();
+    say('Dashboard launching — it opens in your browser in a few seconds (http://localhost:4180, `kai dashboard` any time).');
+  }
 
   markStepDone(state, 'finish');
   await saveState(paths.setupStateJson, state);

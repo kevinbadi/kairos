@@ -31,6 +31,27 @@ export interface StoredCredentials {
   aiApiKey?: string;
   /** Railway account API token — lets the agent provision the worker. */
   railwayApiToken?: string;
+  /** AI credential destined for the cloud worker's environment. */
+  workerAiKey?: string;
+  /** Which env var the worker AI credential belongs in. */
+  workerAiKind?: 'ANTHROPIC_API_KEY' | 'CLAUDE_CODE_OAUTH_TOKEN';
+}
+
+export async function resolveWorkerAiCredential(): Promise<{ kind: 'ANTHROPIC_API_KEY' | 'CLAUDE_CODE_OAUTH_TOKEN'; value: string } | null> {
+  if (existsSync(CREDENTIALS_PATH)) {
+    try {
+      const parsed = JSON.parse(await readFile(CREDENTIALS_PATH, 'utf8')) as StoredCredentials;
+      if (parsed.workerAiKey && parsed.workerAiKind) return { kind: parsed.workerAiKind, value: parsed.workerAiKey };
+    } catch {
+      // fall through to env
+    }
+  }
+  const fromEnv = process.env.ANTHROPIC_API_KEY?.trim();
+  return fromEnv ? { kind: 'ANTHROPIC_API_KEY', value: fromEnv } : null;
+}
+
+export async function saveWorkerAiCredential(kind: 'ANTHROPIC_API_KEY' | 'CLAUDE_CODE_OAUTH_TOKEN', value: string): Promise<void> {
+  await saveCredentials({ workerAiKey: value, workerAiKind: kind } as unknown as StoredCredentials);
 }
 
 /** Railway account token: RAILWAY_API_TOKEN env wins, then the saved one. */

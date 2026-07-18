@@ -10,10 +10,10 @@ import { dirname } from 'node:path';
 export const INTERVIEW_STEPS = [
   'brain',
   'mode',
-  // The infrastructure call comes early: everything after initializes
-  // against the chosen environment (Railway worker vs this machine).
-  'pathway',
+  // CreatorOS key first, then the infrastructure call — with both keys in
+  // hand the finish step can provision Railway and light the dashboard up.
   'key',
+  'pathway',
   'brand',
   'profiles',
   'finish',
@@ -63,6 +63,10 @@ export interface InterviewState {
       railwayServiceId?: string;
       /** A Railway API token was saved to ~/.kairos — the agent can provision. */
       railwayTokenSaved?: boolean;
+      /** An AI credential for the cloud worker was saved — hands-free deploy possible. */
+      aiCredentialSaved?: boolean;
+      /** The user confirmed the Anthropic spend limit is set. */
+      spendLimitConfirmed?: boolean;
     };
   };
 }
