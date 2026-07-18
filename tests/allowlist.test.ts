@@ -19,6 +19,11 @@ describe('endpoint allowlist', () => {
     expect(checkEndpoint('GET', '/v1/analytics/best-time').allowed).toBe(true);
     expect(checkEndpoint('GET', '/v1/accounts/follower-stats').allowed).toBe(true);
     expect(checkEndpoint('POST', '/v1/inbox/comments/post1').allowed).toBe(true);
+    expect(checkEndpoint('POST', '/v1/inbox/comments/post1/c1/hide').allowed).toBe(true);
+    expect(checkEndpoint('POST', '/v1/inbox/comments/post1/c1/like').allowed).toBe(true);
+    expect(checkEndpoint('DELETE', '/v1/inbox/comments/post1?accountId=a1&commentId=c1').allowed).toBe(true);
+    expect(checkEndpoint('GET', '/v1/comment-automations/auto1/logs?status=failed').allowed).toBe(true);
+    expect(checkEndpoint('DELETE', '/v1/comment-automations/auto1').allowed).toBe(true);
     expect(checkEndpoint('POST', '/v1/inbox/conversations/c1/messages').allowed).toBe(true);
     expect(checkEndpoint('POST', '/v1/comment-automations').allowed).toBe(true);
     expect(checkEndpoint('DELETE', '/v1/webhooks/settings?id=w1').allowed).toBe(true);

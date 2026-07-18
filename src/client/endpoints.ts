@@ -74,7 +74,9 @@ const ALLOWLIST: EndpointRule[] = [
   { method: 'GET', pattern: /^\/v1\/inbox\/comments\/?$/ },
   { method: 'GET', pattern: /^\/v1\/inbox\/comments\/[^/]+\/?$/ },
   { method: 'POST', pattern: /^\/v1\/inbox\/comments\/[^/]+\/?$/ },
+  { method: 'DELETE', pattern: /^\/v1\/inbox\/comments\/[^/]+\/?$/ },
   { method: 'POST', pattern: /^\/v1\/inbox\/comments\/[^/]+\/[^/]+\/like\/?$/ },
+  { method: 'POST', pattern: /^\/v1\/inbox\/comments\/[^/]+\/[^/]+\/hide\/?$/ },
   { method: 'POST', pattern: /^\/v1\/inbox\/comments\/[^/]+\/[^/]+\/private-reply\/?$/ },
 
   // ---- Inbox: conversations / DMs ----

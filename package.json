@@ -13,6 +13,8 @@
   "scripts": {
     "prestart": "node scripts/ensure-deps.mjs",
     "start": "tsx src/index.ts",
+    "predashboard": "node scripts/ensure-deps.mjs",
+    "dashboard": "tsx dashboard/server.ts",
     "pretest": "node scripts/ensure-deps.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

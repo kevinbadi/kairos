@@ -245,9 +245,27 @@ export function buildToolRegistry(
     ),
     t(
       'like_comment',
-      'Like a comment (positive but content-free comments get a like, not a reply).',
-      { postId: z.string(), commentId: z.string(), accountId: z.string() },
-      (a) => run(() => client.likeComment(a.postId as string, a.commentId as string, a.accountId as string)),
+      'Like/upvote a comment (positive but content-free comments get a like, not a reply). Facebook, Twitter/X, Bluesky, Reddit only; Bluesky also needs the comment cid from get_post_comments.',
+      {
+        platform: z.string(),
+        postId: z.string(),
+        commentId: z.string(),
+        accountId: z.string(),
+        cid: z.string().optional().describe('Bluesky only — the comment content identifier, required there'),
+      },
+      (args) => run(() => client.likeComment(args as { platform: string; postId: string; commentId: string; accountId: string; cid?: string })),
+    ),
+    t(
+      'delete_comment',
+      'Delete a comment from a post (Facebook, Instagram, Bluesky, Reddit, YouTube, LinkedIn). DESTRUCTIVE and irreversible — prefer hide_comment where available; delete only obvious spam/scams, or on explicit human instruction.',
+      { platform: z.string(), postId: z.string(), commentId: z.string(), accountId: z.string() },
+      (args) => run(() => client.deleteComment(args as { platform: string; postId: string; commentId: string; accountId: string })),
+    ),
+    t(
+      'hide_comment',
+      'Hide a comment so only the commenter and page admin see it (Facebook, Instagram, Threads, Twitter/X). Use for spam/abuse worth suppressing but not worth engaging; on X only replies to the account’s own conversations can be hidden.',
+      { platform: z.string(), postId: z.string(), commentId: z.string(), accountId: z.string() },
+      (args) => run(() => client.hideComment(args as { platform: string; postId: string; commentId: string; accountId: string })),
     ),
     t(
       'private_reply_to_comment',
@@ -338,8 +356,17 @@ export function buildToolRegistry(
       { automationId: z.string() },
       (a) => run(() => client.deleteCommentAutomation(a.automationId as string)),
     ),
-    t('funnel_logs', 'Trigger logs for a funnel.', { automationId: z.string() }, (a) =>
-      run(() => client.commentAutomationLogs(a.automationId as string)),
+    t(
+      'funnel_logs',
+      'Trigger logs for a funnel: who commented, what they said, whether the DM sent. Paginated; filter by status to find failures.',
+      {
+        automationId: z.string(),
+        status: z.enum(['sent', 'failed', 'skipped']).optional(),
+        limit: z.number().optional().describe('Default 50'),
+        skip: z.number().optional(),
+      },
+      ({ automationId, ...query }) =>
+        run(() => client.commentAutomationLogs(automationId as string, query as Record<string, string | number | undefined>)),
     ),
 
     // ---- Webhooks ----

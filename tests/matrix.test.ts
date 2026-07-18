@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assertCommentDeleteSupported,
+  assertCommentHideSupported,
+  assertCommentLikeSupported,
   assertCommentReplySupported,
   assertFunnelSupported,
   assertMessageReplySupported,
   normalizePlatform,
   PlatformNotSupportedError,
+  supportsCommentDelete,
+  supportsCommentHide,
+  supportsCommentLike,
   supportsCommentReplies,
   supportsMessageReplies,
 } from '../src/client/platformMatrix.js';
@@ -28,6 +34,52 @@ describe('platform matrix — comments', () => {
     for (const platform of ['facebook', 'instagram', 'twitter', 'bluesky', 'threads', 'reddit', 'youtube', 'linkedin']) {
       expect(() => assertCommentReplySupported(platform)).not.toThrow();
     }
+  });
+});
+
+describe('platform matrix — comment hiding', () => {
+  it('allows Facebook, Instagram, Threads, and Twitter/X (incl. the x alias)', () => {
+    for (const platform of ['facebook', 'instagram', 'threads', 'twitter', 'x']) {
+      expect(() => assertCommentHideSupported(platform)).not.toThrow();
+    }
+  });
+
+  it('refuses the rest with a friendly message', () => {
+    for (const platform of ['tiktok', 'youtube', 'linkedin', 'reddit', 'bluesky', 'pinterest']) {
+      expect(supportsCommentHide(platform)).toBe(false);
+    }
+    expect(() => assertCommentHideSupported('reddit')).toThrowError(PlatformNotSupportedError);
+    expect(() => assertCommentHideSupported('reddit')).toThrowError(/not supported on/);
+  });
+});
+
+describe('platform matrix — comment likes', () => {
+  it('allows Facebook, Twitter/X, Bluesky, and Reddit', () => {
+    for (const platform of ['facebook', 'twitter', 'x', 'bluesky', 'reddit']) {
+      expect(() => assertCommentLikeSupported(platform)).not.toThrow();
+    }
+  });
+
+  it('refuses the rest — notably Instagram', () => {
+    for (const platform of ['instagram', 'tiktok', 'threads', 'youtube', 'linkedin']) {
+      expect(supportsCommentLike(platform)).toBe(false);
+    }
+    expect(() => assertCommentLikeSupported('instagram')).toThrowError(PlatformNotSupportedError);
+  });
+});
+
+describe('platform matrix — comment deletion', () => {
+  it('allows Facebook, Instagram, Bluesky, Reddit, YouTube, and LinkedIn', () => {
+    for (const platform of ['facebook', 'instagram', 'bluesky', 'reddit', 'youtube', 'linkedin']) {
+      expect(() => assertCommentDeleteSupported(platform)).not.toThrow();
+    }
+  });
+
+  it('refuses the rest', () => {
+    for (const platform of ['tiktok', 'twitter', 'threads', 'pinterest']) {
+      expect(supportsCommentDelete(platform)).toBe(false);
+    }
+    expect(() => assertCommentDeleteSupported('twitter')).toThrowError(/not supported on/);
   });
 });
 
@@ -78,5 +130,29 @@ describe('matrix enforced inside the client (executor, not prompt discipline)', 
     await expect(
       client.sendMessage({ platform: 'threads', conversationId: 'c', accountId: 'a', message: 'hi' }),
     ).rejects.toThrow(/not supported on this platform/);
+  });
+
+  it('YouTube comment hide is refused before any network call', async () => {
+    await expect(
+      client.hideComment({ platform: 'youtube', postId: 'p', commentId: 'c', accountId: 'a' }),
+    ).rejects.toThrow(PlatformNotSupportedError);
+  });
+
+  it('Instagram comment like is refused before any network call', async () => {
+    await expect(
+      client.likeComment({ platform: 'instagram', postId: 'p', commentId: 'c', accountId: 'a' }),
+    ).rejects.toThrow(PlatformNotSupportedError);
+  });
+
+  it('Bluesky like without a cid fails before any network call', async () => {
+    await expect(
+      client.likeComment({ platform: 'bluesky', postId: 'p', commentId: 'c', accountId: 'a' }),
+    ).rejects.toThrow(/cid/);
+  });
+
+  it('Twitter comment delete is refused before any network call', async () => {
+    await expect(
+      client.deleteComment({ platform: 'twitter', postId: 'p', commentId: 'c', accountId: 'a' }),
+    ).rejects.toThrow(PlatformNotSupportedError);
   });
 });

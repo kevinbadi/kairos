@@ -14,10 +14,14 @@ import {
   type HttpMethod,
 } from './endpoints.js';
 import {
+  assertCommentDeleteSupported,
+  assertCommentHideSupported,
+  assertCommentLikeSupported,
   assertCommentReplySupported,
   assertFunnelSupported,
   assertMessageReplySupported,
   assertPrivateReplySupported,
+  normalizePlatform,
 } from './platformMatrix.js';
 import { sanitize } from '../util/sanitize.js';
 import { maskKey } from '../util/mask.js';
@@ -299,9 +303,53 @@ export class CreatorOSClient {
     });
   }
 
-  async likeComment(postId: string, commentId: string, accountId: string): Promise<unknown> {
-    return this.request('POST', `/v1/inbox/comments/${postId}/${commentId}/like`, {
-      body: { accountId },
+  /**
+   * Like/upvote a comment. Facebook, Twitter/X, Bluesky, Reddit; Bluesky
+   * additionally needs the comment's cid (content identifier).
+   */
+  async likeComment(args: {
+    platform: string;
+    postId: string;
+    commentId: string;
+    accountId: string;
+    cid?: string;
+  }): Promise<unknown> {
+    assertCommentLikeSupported(args.platform);
+    if (normalizePlatform(args.platform) === 'bluesky' && !args.cid) {
+      throw new Error('Bluesky likes need the comment cid — it comes back with the comment in get_post_comments.');
+    }
+    return this.request('POST', `/v1/inbox/comments/${args.postId}/${args.commentId}/like`, {
+      body: { accountId: args.accountId, ...(args.cid ? { cid: args.cid } : {}) },
+    });
+  }
+
+  /** Delete a comment. Facebook, Instagram, Bluesky, Reddit, YouTube, LinkedIn. */
+  async deleteComment(args: {
+    platform: string;
+    postId: string;
+    commentId: string;
+    accountId: string;
+  }): Promise<unknown> {
+    assertCommentDeleteSupported(args.platform);
+    return this.request('DELETE', `/v1/inbox/comments/${args.postId}`, {
+      query: { accountId: args.accountId, commentId: args.commentId },
+    });
+  }
+
+  /**
+   * Hide a comment (visible only to the commenter and page admin).
+   * Facebook, Instagram, Threads, and Twitter/X; on X the reply must belong
+   * to a conversation the account started.
+   */
+  async hideComment(args: {
+    platform: string;
+    postId: string;
+    commentId: string;
+    accountId: string;
+  }): Promise<unknown> {
+    assertCommentHideSupported(args.platform);
+    return this.request('POST', `/v1/inbox/comments/${args.postId}/${args.commentId}/hide`, {
+      body: { accountId: args.accountId },
     });
   }
 

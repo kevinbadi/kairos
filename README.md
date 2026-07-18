@@ -41,13 +41,64 @@ you ▸ schedule the week from content-library/
 
 Everything Kai learns lives in `kairos/` (gitignored): `BRAND.md` (voice, links, audience — every caption flows from it), `PROFILES.md` (account IDs), `kairos.json` (config), `skills/` (playbooks), `knowledge/` (competitor research, tutorials index).
 
-## The dashboard
+## Dashboard
 
 ```bash
-kai dashboard        # or: npm start creatoros dashboard
+npm run dashboard    # → http://localhost:4180  (override: KAIROS_DASHBOARD_PORT)
+kai dashboard        # same thing, from anywhere (after `npm link`)
 ```
 
-Mission control for your agent, in the browser (local-only, `127.0.0.1`): every automation and workflow Kairos is running and whether it's live, the comments-to-DM funnel and auto-reply setup, follower growth and recent-post performance, the roadmap of content-marketing workflows coming to this repo — and the same Kai chat, streaming tool calls and all, embedded right in the page.
+A local web dashboard for monitoring what your agent is *actually doing* — and verifying it's working. Zero external services: it reads this repo's files, the agent's structured activity log (`logs/activity.jsonl`, one JSON line per action the agent takes), and the CreatorOS API with your already-configured credentials. Missing credentials never crash it — you get a friendly connect state instead.
+
+**Pages:** Overview (health strip, reply/DM/post counters, a GitHub-style year heatmap of agent activity, live feed) · Automations (every automation, its on/off state, system prompt, and sent/skipped/failed stats) · Brand (`kairos/BRAND.md` rendered, edit-in-place) · Training (every workflow playbook with last-used-by-the-agent info, edit-in-place) · Logs (full filterable feed with raw JSON + real error payloads) · Chat (the same Kai as the terminal, streaming in the browser). Dark and light themes, persisted.
+
+### The API under it
+
+Every panel is fed by plain local JSON endpoints — build your own UI against them:
+
+| Endpoint | What it returns |
+|---|---|
+| `GET /api/health` | credentials valid?, config files loaded, brain status, last action, staleness warning |
+| `GET /api/activity` | log entries + counters + heatmap buckets (`?workflow=&platform=&outcome=&limit=`) |
+| `GET /api/automations` | each automation's state, prompt, and log-derived stats; cron list; catalog |
+| `GET /api/brand` · `PUT /api/brand` | the brand file (`{path, mtime, content}`) / save edits to disk |
+| `GET /api/workflows` · `PUT /api/workflows` | training files + per-file agent usage / save (`{id, content}`) |
+| `POST /api/chat` | talk to the agent; streams NDJSON events (`init`/`text`/`tool`/`tool_result`/`done`) |
+
+### How to add your own panel
+
+A panel is one file in `dashboard/public/panels/` — no build step, just an ES module:
+
+```js
+// dashboard/public/panels/streak.js
+export default {
+  id: 'streak',
+  title: 'Posting Streak',
+  icon: '⚡',
+  route: '/streak',
+  fetchData: ({ api }) => api('/api/activity?limit=1'),
+  render(root, data, { h, card }) {
+    let streak = 0;
+    const days = data.summary.heatmap;           // 365 × {date, count}
+    for (let i = days.length - 1; i >= 0 && days[i].count > 0; i--) streak++;
+    root.append(
+      card('Current streak',
+        h('div', { class: 'stat-value num' }, `${streak} days`),
+        h('div', { class: 'stat-sub' }, 'consecutive days with agent activity'),
+      ),
+    );
+  },
+};
+```
+
+Then register it in `dashboard/public/panels/registry.js`:
+
+```js
+import streak from './streak.js';
+export const panels = [overview, automations, brand, training, logs, chat, streak];
+```
+
+That's the whole integration — the shell gives you the sidebar entry, routing, the loading gate, and stale-while-revalidate caching for free. Style with the tokens in `dashboard/public/theme.css` (`.card-solid`, `.badge`, `.stat-value`…) and it will match both themes.
 
 ## Capability surface
 

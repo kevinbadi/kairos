@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kairos Dashboard</title>
+  <link rel="stylesheet" href="/theme.css" />
+  <!-- Apply the saved theme before first paint so there is no flash -->
+  <script>
+    document.documentElement.dataset.theme = localStorage.getItem('kairos-theme') || 'dark';
+  </script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="logo">Kairos<span class="dot">.</span></div>
+      <div class="logo-sub">CreatorOS agent · dashboard</div>
+      <!-- nav items are generated from the panel registry (panels/registry.js) -->
+      <div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm theme-toggle" id="theme-toggle">◐ theme</button>
+    </aside>
+    <main class="main" id="main">
+      <div class="page-loading"><div class="spinner"></div></div>
+    </main>
+  </div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -10,5 +10,8 @@ deploy/
 node_modules/
 dist/
 *.log
+
+# The agent's structured activity log (per-user data, read by the dashboard)
+logs/
 .env
 .DS_Store

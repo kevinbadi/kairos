@@ -92,23 +92,13 @@ async function main(): Promise<void> {
   await runRepl(client, config, paths.root);
 }
 
-/** `kai dashboard` — mission control in the browser, over the same workspace. */
+/** `kai dashboard` — the same server `npm run dashboard` boots. Zero-config:
+ * missing credentials render a connect state instead of crashing. */
 async function runDashboard(): Promise<void> {
-  const paths = kairosPaths();
-  const apiKey = await resolveApiKey();
-  if (!apiKey || !existsSync(paths.configJson)) {
-    console.error(
-      'The dashboard needs a finished setup. Run `npm start creatoros kairos` first — the dashboard reads everything the onboarding writes.',
-    );
-    process.exitCode = 1;
-    return;
-  }
-  const client = new CreatorOSClient({ apiKey });
-  const config = await loadConfig(paths.configJson);
-  const { startDashboard, openBrowser } = await import('./dashboard/server.js');
-  const { url } = await startDashboard(client, config, paths.root);
-  console.log(`\nKairos dashboard is live: ${url}`);
-  console.log('\x1b[2mAutomations, workflows, analytics, and Kai chat — all in the browser. Ctrl-C stops it.\x1b[0m');
+  const { startDashboard, openBrowser } = await import('../dashboard/server.js');
+  const { url } = await startDashboard(kairosPaths().root);
+  console.log(`\nKairos Dashboard → ${url}`);
+  console.log('\x1b[2mAutomations, workflows, brand, training, logs, and Kai chat. Ctrl-C stops it.\x1b[0m');
   openBrowser(url);
   // Keep the process alive until the user stops it.
   await new Promise<void>((resolve) => {

@@ -66,6 +66,35 @@ export const FUNNEL_PLATFORMS: readonly Platform[] = ['instagram', 'facebook'];
 /** Private reply to a comment (comment → DM, one shot, 7-day window). */
 export const PRIVATE_REPLY_PLATFORMS: readonly Platform[] = ['instagram', 'facebook'];
 
+/**
+ * Hiding comments (visible only to the commenter and page admin). On
+ * Twitter/X the reply must belong to a conversation the account started.
+ */
+export const COMMENT_HIDE_PLATFORMS: readonly Platform[] = [
+  'facebook',
+  'instagram',
+  'threads',
+  'twitter',
+];
+
+/** Liking/upvoting comments. Bluesky additionally requires the comment's cid. */
+export const COMMENT_LIKE_PLATFORMS: readonly Platform[] = [
+  'facebook',
+  'twitter',
+  'bluesky',
+  'reddit',
+];
+
+/** Deleting comments on a post. */
+export const COMMENT_DELETE_PLATFORMS: readonly Platform[] = [
+  'facebook',
+  'instagram',
+  'bluesky',
+  'reddit',
+  'youtube',
+  'linkedin',
+];
+
 const LABELS: Partial<Record<Platform, string>> = {
   tiktok: 'TikTok',
   instagram: 'Instagram',
@@ -127,6 +156,42 @@ export function assertFunnelSupported(platform: string): void {
   if (!supportsFunnels(platform)) {
     throw new PlatformNotSupportedError(
       `Comment-to-DM funnels run on Instagram and Facebook only — not supported on ${platformLabel(platform)}.`,
+    );
+  }
+}
+
+export function supportsCommentHide(platform: string): boolean {
+  return COMMENT_HIDE_PLATFORMS.includes(normalizePlatform(platform));
+}
+
+export function supportsCommentLike(platform: string): boolean {
+  return COMMENT_LIKE_PLATFORMS.includes(normalizePlatform(platform));
+}
+
+export function supportsCommentDelete(platform: string): boolean {
+  return COMMENT_DELETE_PLATFORMS.includes(normalizePlatform(platform));
+}
+
+export function assertCommentLikeSupported(platform: string): void {
+  if (!supportsCommentLike(platform)) {
+    throw new PlatformNotSupportedError(
+      `Liking comments works on Facebook, Twitter/X, Bluesky, and Reddit only — not supported on ${platformLabel(platform)}.`,
+    );
+  }
+}
+
+export function assertCommentDeleteSupported(platform: string): void {
+  if (!supportsCommentDelete(platform)) {
+    throw new PlatformNotSupportedError(
+      `Deleting comments works on Facebook, Instagram, Bluesky, Reddit, YouTube, and LinkedIn only — not supported on ${platformLabel(platform)}.`,
+    );
+  }
+}
+
+export function assertCommentHideSupported(platform: string): void {
+  if (!supportsCommentHide(platform)) {
+    throw new PlatformNotSupportedError(
+      `Hiding comments works on Facebook, Instagram, Threads, and Twitter/X only — not supported on ${platformLabel(platform)}.`,
     );
   }
 }
