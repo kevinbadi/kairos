@@ -25,6 +25,7 @@ import {
 } from './platformMatrix.js';
 import { sanitize } from '../util/sanitize.js';
 import { maskKey } from '../util/mask.js';
+import { annotateOwnComments, annotateOwnMessages, SelfReplyBlockedError } from './selfGuard.js';
 import type {
   ApiErrorBody,
   CommentAutomationBody,
@@ -70,6 +71,10 @@ export class CreatorOSClient {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
+  /** Ids of comments this account authored, learned from fetches — reply targets that would be self-replies. */
+  private readonly ownCommentIds = new Set<string>();
+  /** Per conversation: is the latest message the account's own? Learned from fetches and sends. */
+  private readonly conversationLatestOwn = new Map<string, boolean>();
 
   constructor(options: CreatorOSClientOptions) {
     this.apiKey = options.apiKey;
@@ -278,11 +283,24 @@ export class CreatorOSClient {
   // ---- Inbox: comments ----
 
   async listComments(query: Query = {}): Promise<unknown> {
-    return this.request('GET', '/v1/inbox/comments', { query });
+    const data = await this.request('GET', '/v1/inbox/comments', { query });
+    for (const id of annotateOwnComments(data)) this.ownCommentIds.add(id);
+    return data;
   }
 
   async getPostComments(postId: string, query: Query): Promise<unknown> {
-    return this.request('GET', `/v1/inbox/comments/${postId}`, { query });
+    const data = await this.request('GET', `/v1/inbox/comments/${postId}`, { query });
+    for (const id of annotateOwnComments(data)) this.ownCommentIds.add(id);
+    return data;
+  }
+
+  /** The self-reply loop breaker: a comment this account wrote is never a valid reply target. */
+  private assertNotOwnComment(commentId: string | undefined, action: string): void {
+    if (commentId && this.ownCommentIds.has(commentId)) {
+      throw new SelfReplyBlockedError(
+        `Blocked: comment ${commentId} was posted by this account. ${action} your own comment creates an infinite self-reply loop — treat it as "already handled" and move on.`,
+      );
+    }
   }
 
   /**
@@ -298,6 +316,7 @@ export class CreatorOSClient {
     commentId?: string;
   }): Promise<unknown> {
     assertCommentReplySupported(args.platform);
+    this.assertNotOwnComment(args.commentId, 'Replying to');
     return this.request('POST', `/v1/inbox/comments/${args.postId}`, {
       body: { accountId: args.accountId, message: args.message, commentId: args.commentId },
     });
@@ -363,6 +382,7 @@ export class CreatorOSClient {
     buttons?: unknown[];
   }): Promise<unknown> {
     assertPrivateReplySupported(args.platform);
+    this.assertNotOwnComment(args.commentId, 'Privately replying to');
     return this.request('POST', `/v1/inbox/comments/${args.postId}/${args.commentId}/private-reply`, {
       body: { accountId: args.accountId, message: args.message, buttons: args.buttons },
     });
@@ -375,20 +395,36 @@ export class CreatorOSClient {
   }
 
   async getConversationMessages(conversationId: string, query: Query): Promise<unknown> {
-    return this.request('GET', `/v1/inbox/conversations/${conversationId}/messages`, { query });
+    const data = await this.request('GET', `/v1/inbox/conversations/${conversationId}/messages`, { query });
+    const latestIsOwn = annotateOwnMessages(data);
+    if (latestIsOwn !== null) this.conversationLatestOwn.set(conversationId, latestIsOwn);
+    return data;
   }
 
-  /** Send a DM in an existing conversation. Platform matrix enforced. */
+  /**
+   * Send a DM in an existing conversation. Platform matrix enforced. The
+   * auto-response loop breaker: when the latest message in the conversation
+   * is the account's own, sending would mean answering yourself — blocked
+   * unless allowFollowUp marks it an intentional human-approved follow-up.
+   */
   async sendMessage(args: {
     platform: string;
     conversationId: string;
     accountId: string;
     message: string;
+    allowFollowUp?: boolean;
   }): Promise<unknown> {
     assertMessageReplySupported(args.platform);
-    return this.request('POST', `/v1/inbox/conversations/${args.conversationId}/messages`, {
+    if (!args.allowFollowUp && this.conversationLatestOwn.get(args.conversationId) === true) {
+      throw new SelfReplyBlockedError(
+        `Blocked: the latest message in conversation ${args.conversationId} is this account's own — sending now would answer yourself and loop. Wait for the other person to reply. For an intentional follow-up the human explicitly asked for, pass allowFollowUp: true.`,
+      );
+    }
+    const result = await this.request('POST', `/v1/inbox/conversations/${args.conversationId}/messages`, {
       body: { accountId: args.accountId, message: args.message },
     });
+    this.conversationLatestOwn.set(args.conversationId, true);
+    return result;
   }
 
   // ---- Comment-to-DM funnels ----

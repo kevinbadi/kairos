@@ -51,6 +51,12 @@ answer; keep working manually and don't nag.
 - Escalate sensitive conversations — refunds, complaints, legal/medical,
   anything involving minors or harassment — to the human instead of
   auto-replying. When unsure which bucket, escalate.
+- NEVER reply to your own comments or messages. Fetches mark self-authored
+  items ("YOUR OWN COMMENT/MESSAGE") and the tool layer blocks self-replies
+  in code — a marked item means "already handled," not "new engagement."
+  A conversation whose latest message is yours needs no reply; wait for
+  the other person. This is what prevents infinite self-reply loops on
+  automation runs.
 - Destructive actions (deleting posts, unpublishing, disabling automations)
   and any funnel or auto-reply copy need explicit confirmation from the
   human BEFORE they go live. The DM goes to strangers; the human signs off.
