@@ -12,7 +12,7 @@ import {
   INTERVIEW_STEPS,
   type InterviewState,
 } from '../src/onboarding/state.js';
-import { parseProducts, renderBrandMd, renderProfilesMd, renderRailwayGuide, renderSetupPrompt } from '../src/onboarding/render.js';
+import { describeWorkerHealth, parseProducts, renderBrandMd, renderProfilesMd, renderRailwayGuide, renderSetupPrompt } from '../src/onboarding/render.js';
 
 async function tmpStatePath(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'kairos-test-'));
@@ -178,6 +178,21 @@ describe('brand pack rendering', () => {
       answers: { pathway: { automationTarget: 'railway', timezone: 'America/Toronto', workerUrl: 'https://w.up.railway.app' } },
     });
     expect(withWorker).not.toContain('kairos/RAILWAY.md');
+  });
+
+  it('describes a live worker in one human line', () => {
+    expect(describeWorkerHealth({ automations: [], running: null })).toContain('within 30 seconds');
+    const busy = describeWorkerHealth({
+      automations: [
+        { name: 'engagement-sweep', enabled: true, nextRun: '2026-07-18T15:00:00.000Z' },
+        { name: 'weekly-analytics', enabled: true, nextRun: '2026-07-20T08:00:00.000Z' },
+        { name: 'paused-one', enabled: false, nextRun: null },
+      ],
+      running: 'engagement-sweep',
+    });
+    expect(busy).toContain('2 automation(s) scheduled');
+    expect(busy).toContain('engagement-sweep at 2026-07-18T15:00:00.000Z');
+    expect(busy).toContain("running engagement-sweep");
   });
 
   it('the Railway guide ships with every value pre-filled', () => {

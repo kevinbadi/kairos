@@ -27,6 +27,7 @@ import {
   type InterviewState,
 } from './state.js';
 import {
+  describeWorkerHealth,
   parseProducts,
   renderBrandMd,
   renderProfilesMd,
@@ -37,6 +38,7 @@ import {
 } from './render.js';
 import { askBlock, askList } from '../ui/prompts.js';
 import { RAILWAY_SPEND_LIMIT_WARNING } from '../automations/crons.js';
+import { fetchWorkerState } from '../dashboard/worker.js';
 
 const TEMPLATES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'templates');
 
@@ -381,28 +383,55 @@ async function stepPathway(state: InterviewState, paths: KairosPaths): Promise<v
     return;
   }
 
-  // Railway: initialize as much as possible on the user's behalf — token
-  // generated here, deploy guide written with every value filled in.
+  // Railway: initialize as much as possible on the user's behalf. Already
+  // deployed → verify the worker LIVE right here and report its schedule.
+  // Not yet → generate the auth token, write the guide, explain the loop.
   say(
     `The worker needs two credentials on Railway: your CreatorOS key, and an AI credential — ANTHROPIC_API_KEY, or a token from \`claude setup-token\` (CLAUDE_CODE_OAUTH_TOKEN) to stay on your Claude plan.\n⚠ ${RAILWAY_SPEND_LIMIT_WARNING}`,
   );
-  const workerToken = randomBytes(24).toString('hex');
   const workerUrl = (
     await input({
-      message: 'Worker URL, if the Railway service is already deployed (blank — the deploy guide covers it):',
+      message: 'Worker URL, if the Railway service is already deployed (blank — not yet, set me up for it):',
     })
   ).trim();
+
+  let workerToken: string | undefined;
+  if (workerUrl) {
+    workerToken =
+      (await password({
+        message: 'The KAIROS_WORKER_TOKEN you set on that service (blank if you did not set one):',
+        mask: '*',
+      })).trim() || undefined;
+    process.stdout.write(`Checking the worker at ${workerUrl} ... `);
+    const worker = await fetchWorkerState(workerUrl, workerToken);
+    if (worker.reachable && worker.health) {
+      console.log('live.');
+      say(`Worker verified. ${describeWorkerHealth(worker.health)}`);
+    } else {
+      console.log('unreachable.');
+      say(
+        "Couldn't reach /health there — saving it anyway. Check the URL and token, then tell me \"verify my worker\" in chat; kairos/RAILWAY.md has the full checklist.",
+      );
+    }
+  } else {
+    workerToken = randomBytes(24).toString('hex');
+  }
+
   const railwayServiceId = (
     await input({
       message: 'Railway service ID, for live deploy status on the dashboard (blank to skip):',
     })
   ).trim();
 
-  await mkdir(paths.kairosDir, { recursive: true });
-  await writeFile(join(paths.kairosDir, 'RAILWAY.md'), renderRailwayGuide({ timezone, workerToken }), 'utf8');
-  say(
-    `Done on my end: I generated your worker auth token and wrote the full deploy guide to kairos/RAILWAY.md — every value filled in, ~10 minutes of copy-paste on railway.app.${workerUrl ? '' : ' Deploy whenever; automations you set up in chat start running the moment the worker is live.'}`,
-  );
+  if (!workerUrl) {
+    await mkdir(paths.kairosDir, { recursive: true });
+    await writeFile(join(paths.kairosDir, 'RAILWAY.md'), renderRailwayGuide({ timezone, workerToken: workerToken! }), 'utf8');
+    say(
+      `Everything I can do without you is done: your worker auth token is generated and the full deploy guide is at kairos/RAILWAY.md — every value pre-filled, ~10 minutes of copy-paste on railway.app.
+
+How it works once deployed: the worker re-reads kairos/automations.json every 30 seconds, so automations you pick in our chat start running the moment it's live — no restarts, no redeploys, ever. Its /health endpoint (and the dashboard's Automations page) shows the loaded schedule with next-run times. Want a preview first? \`npm run worker\` runs the same thing right here on this machine.`,
+    );
+  }
 
   state.answers.pathway = {
     automationTarget,

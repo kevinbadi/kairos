@@ -103,6 +103,24 @@ Adding a tutorial is a one-line edit: \`- [Title](URL) — what it teaches\`.
 `;
 }
 
+/** One human line about a live worker's schedule, for the interview and chat. */
+export function describeWorkerHealth(health: {
+  automations: Array<{ name: string; enabled: boolean; nextRun: string | null }>;
+  running: string | null;
+}): string {
+  const enabled = health.automations.filter((a) => a.enabled);
+  if (enabled.length === 0) {
+    return 'No automations scheduled yet — pick them in our chat and the worker starts running them within 30 seconds, no redeploy.';
+  }
+  const nexts = enabled
+    .filter((a) => a.nextRun)
+    .sort((a, b) => ((a.nextRun ?? '') < (b.nextRun ?? '') ? -1 : 1))
+    .slice(0, 3)
+    .map((a) => `${a.name} at ${a.nextRun}`);
+  const runningNote = health.running ? ` Right now it's running ${health.running}.` : '';
+  return `${enabled.length} automation(s) scheduled${nexts.length ? ` — next up: ${nexts.join(', ')}` : ''}.${runningNote}`;
+}
+
 /**
  * The Railway deploy guide, written the moment the user picks the Railway
  * pathway — every value they need is filled in (worker token generated,
