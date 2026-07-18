@@ -517,7 +517,7 @@ export async function runRepl(
                 printToolLine(block.name, block.input);
               }
             }
-            spinner.start('kai is working…');
+            spinner.start('kai is cooking…');
           } else if (message.type === 'user') {
             const content = (message as { message?: { content?: unknown } }).message?.content;
             if (Array.isArray(content)) {
@@ -527,7 +527,7 @@ export async function runRepl(
                   printToolResult(block as { content?: unknown; is_error?: boolean });
                 }
               }
-              spinner.start('kai is working…');
+              spinner.start('kai is cooking…');
             }
           } else if (message.type === 'result') {
             spinner.stop();
