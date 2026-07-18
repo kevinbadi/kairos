@@ -10,6 +10,7 @@ import type { CreatorOSClient } from '../client/client.js';
 import type { CreatePostBody } from '../client/types.js';
 import {
   createAutomation,
+  deleteAutomation,
   STARTER_CRONS,
   verifyAutomations,
   RAILWAY_SPEND_LIMIT_WARNING,
@@ -233,7 +234,7 @@ export function buildToolRegistry(
     ),
     t(
       'reply_to_comment',
-      'Reply to a comment (or the post itself when commentId omitted). Platform matrix enforced — TikTok is not supported.',
+      'Reply to a comment (or the post itself when commentId omitted). Platform matrix enforced — TikTok is not supported. Comments marked as YOUR OWN are never reply targets — replying to them is blocked in code.',
       {
         platform: z.string(),
         postId: z.string(),
@@ -294,21 +295,22 @@ export function buildToolRegistry(
     ),
     t(
       'get_conversation_messages',
-      'Messages in one conversation.',
+      'Messages in one conversation. Messages this account sent are marked YOUR OWN MESSAGE — a conversation whose latest message is your own needs no reply.',
       { conversationId: z.string(), accountId: z.string(), limit: z.number().optional() },
       ({ conversationId, ...query }) =>
         run(() => client.getConversationMessages(conversationId as string, query as Record<string, string | number | undefined>)),
     ),
     t(
       'send_message',
-      'Reply in an existing DM conversation. Platform matrix enforced. Escalate refunds/complaints/legal to the human instead.',
+      'Reply in an existing DM conversation. Platform matrix enforced. Escalate refunds/complaints/legal to the human instead. Blocked in code when the latest message is your own (that would be answering yourself) — allowFollowUp only for a follow-up the human explicitly requested.',
       {
         platform: z.string(),
         conversationId: z.string(),
         accountId: z.string(),
         message: z.string(),
+        allowFollowUp: z.boolean().optional().describe('Only when the human explicitly asked for a follow-up to your own last message'),
       },
-      (args) => run(() => client.sendMessage(args as { platform: string; conversationId: string; accountId: string; message: string })),
+      (args) => run(() => client.sendMessage(args as { platform: string; conversationId: string; accountId: string; message: string; allowFollowUp?: boolean })),
     ),
 
     // ---- Comment-to-DM funnels ----
@@ -397,15 +399,17 @@ export function buildToolRegistry(
         name: z.string().describe('lowercase-with-hyphens'),
         schedule: z.string().describe('Strict 5-field cron, e.g. "0 9 * * *"'),
         skill: z.string().describe('A skill in kairos/skills/, e.g. respond-to-comments'),
+        model: z.string().optional().describe('Model override for this automation — use a small/cheap model for engagement runs'),
       },
-      ({ name, schedule, skill }) =>
+      ({ name, schedule, skill, model }) =>
         run(async () => {
-          const cron: StarterCron = {
+          const cron: StarterCron & { model?: string } = {
             name: name as string,
             schedule: schedule as string,
             skill: skill as string,
             pillar: 'content',
             description: '',
+            model: model as string | undefined,
           };
           const result = await createAutomation(workspaceRoot, cron, config?.automationTarget ?? 'local');
           if (result.code !== 0) throw new Error(result.stderr.trim() || result.stdout.trim() || 'automation create failed');
@@ -414,9 +418,20 @@ export function buildToolRegistry(
     ),
     t('list_cron_automations', 'List scheduled agent automations and verify they are loaded.', {}, () =>
       run(async () => {
-        const result = await verifyAutomations(workspaceRoot);
+        const result = await verifyAutomations(workspaceRoot, config?.automationTarget ?? 'local');
         return result.stdout.trim() || result.stderr.trim() || '(none)';
       }),
+    ),
+    t(
+      'delete_cron_automation',
+      'Remove a scheduled agent automation (Railway pathway). Confirm with the human first.',
+      { name: z.string() },
+      ({ name }) =>
+        run(async () => {
+          const result = await deleteAutomation(workspaceRoot, name as string, config?.automationTarget ?? 'local');
+          if (result.code !== 0) throw new Error(result.stderr.trim() || 'automation delete failed');
+          return result.stdout.trim();
+        }),
     ),
   ];
 }

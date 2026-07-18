@@ -54,12 +54,28 @@ export interface AutoReplyConfig {
   escalate: string[];
 }
 
+/** Where the always-on worker lives, so the dashboard can poll it. */
+export interface WorkerConfig {
+  /** Public URL of the Railway worker service, e.g. https://kairos-worker-x.up.railway.app */
+  url?: string;
+  /** Bearer token matching the worker's KAIROS_WORKER_TOKEN. Env KAIROS_WORKER_TOKEN overrides. */
+  token?: string;
+}
+
+/** Railway identifiers for deploy-status checks (RAILWAY_API_TOKEN stays in env, never here). */
+export interface RailwayConfig {
+  projectId?: string;
+  serviceId?: string;
+}
+
 export interface KairosConfig {
   version: 1;
   /** Agency running client brands, or a creator running their own. */
   mode?: 'creator' | 'agency';
   automationTarget: AutomationTarget;
   timezone: string;
+  worker?: WorkerConfig;
+  railway?: RailwayConfig;
   profileId?: string;
   brain?: BrainSettings;
   funnel?: FunnelConfig;

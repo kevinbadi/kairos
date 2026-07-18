@@ -44,7 +44,7 @@ export const STARTER_CRONS: StarterCron[] = [
     skill: 'respond-to-comments',
     pillar: 'engagement',
     description:
-      'Three times a day — triage new comments and messages, reply on-brand, escalate the sensitive ones, keep the funnel fed.',
+      'Three times a day — triage new comments, reply on-brand, escalate the sensitive ones, keep the funnel fed. (DMs: cron the respond-to-messages skill separately.)',
   },
   {
     name: 'weekly-analytics',
@@ -117,17 +117,66 @@ export function runCreatorosCli(args: string[], cwd: string): Promise<CommandRes
   });
 }
 
-/** Create one automation on the chosen pathway, shim included. */
+/**
+ * Create one automation on the chosen pathway. Railway = one always-on
+ * worker reading kairos/automations.json (no per-cron service, no CLI);
+ * local = launchd via the creatoros CLI, shim included.
+ */
 export async function createAutomation(
   workspaceRoot: string,
-  cron: StarterCron,
+  cron: StarterCron & { model?: string },
   target: AutomationTarget,
 ): Promise<CommandResult> {
+  if (target === 'railway') {
+    try {
+      const { upsertWorkerAutomation } = await import('../worker/automations.js');
+      await upsertWorkerAutomation(workspaceRoot, {
+        name: cron.name,
+        schedule: cron.schedule,
+        skill: cron.skill,
+        enabled: true,
+        model: cron.model,
+        description: cron.description || undefined,
+      });
+      return {
+        code: 0,
+        stdout: `${cron.name} saved to kairos/automations.json — the Railway worker picks it up within 30 seconds (no redeploy needed).`,
+        stderr: '',
+      };
+    } catch (error) {
+      return { code: 1, stdout: '', stderr: (error as Error).message };
+    }
+  }
   await ensureCliSkillShim(workspaceRoot, cron.skill);
   return runCreatorosCli(automationCreateArgs(cron, target), workspaceRoot);
 }
 
 /** Verify automations are actually loaded, not just recorded. */
-export async function verifyAutomations(workspaceRoot: string): Promise<CommandResult> {
+export async function verifyAutomations(
+  workspaceRoot: string,
+  target: AutomationTarget = 'local',
+): Promise<CommandResult> {
+  if (target === 'railway') {
+    const { loadWorkerAutomations } = await import('../worker/automations.js');
+    const automations = await loadWorkerAutomations(workspaceRoot);
+    const lines = automations.map(
+      (a) => `${a.name}  [${a.enabled ? 'on' : 'off'}]  ${a.schedule}  → ${a.skill}${a.model ? `  (${a.model})` : ''}`,
+    );
+    return { code: 0, stdout: lines.join('\n'), stderr: '' };
+  }
   return runCreatorosCli(['automations:list'], workspaceRoot);
+}
+
+/** Remove a worker automation (Railway pathway only — local uses the CLI). */
+export async function deleteAutomation(
+  workspaceRoot: string,
+  name: string,
+  target: AutomationTarget,
+): Promise<CommandResult> {
+  if (target !== 'railway') {
+    return { code: 1, stdout: '', stderr: 'Deleting local (launchd) automations is a manual step — ask the human to remove it via the creatoros CLI.' };
+  }
+  const { removeWorkerAutomation } = await import('../worker/automations.js');
+  await removeWorkerAutomation(workspaceRoot, name);
+  return { code: 0, stdout: `${name} removed — the worker drops it within 30 seconds.`, stderr: '' };
 }
