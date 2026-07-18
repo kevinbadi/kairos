@@ -178,6 +178,23 @@ describe('brand pack rendering', () => {
     expect(withToken).toContain('Provision my Railway worker for me');
     expect(withToken).toContain('provision-railway');
     expect(withToken).toContain('spend limit');
+    // Credentials already collected → the agent is told NOT to re-ask.
+    const fullyCollected = renderSetupPrompt({
+      completed: [],
+      answers: {
+        pathway: {
+          automationTarget: 'railway',
+          timezone: 'America/Toronto',
+          workerToken: 'tok',
+          railwayTokenSaved: true,
+          aiCredentialSaved: true,
+          spendLimitConfirmed: true,
+        },
+      },
+    });
+    expect(fullyCollected).toContain('ALREADY SAVED');
+    expect(fullyCollected).toContain('do NOT ask me for it again');
+    expect(fullyCollected).toContain('already confirmed my Anthropic spend limit');
     // No token → manual walkthrough, with the token shortcut offered.
     const withoutToken = renderSetupPrompt({
       completed: [],

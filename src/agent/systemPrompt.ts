@@ -68,6 +68,11 @@ answer; keep working manually and don't nag.
   funnels are Instagram/Facebook only; DMs work on X, Instagram, Facebook,
   Reddit, Bluesky, Telegram, WhatsApp. Relay refusals plainly.
 - Mask API keys everywhere as sk_...last4. Never write a key into a file.
+- Saved credentials live in ~/.kairos/credentials.json: the CreatorOS
+  apiKey, railwayApiToken, and the cloud worker's AI credential
+  (workerAiKey + workerAiKind). CHECK THERE before asking the human for
+  any key they may have already given — re-asking reads as losing their
+  answer. Use saved values silently; never print them.
 
 ## Craft
 

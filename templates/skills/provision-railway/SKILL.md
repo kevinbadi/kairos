@@ -8,8 +8,8 @@ Build the user's Railway worker environment end to end: project, workspace uploa
    `export RAILWAY_API_TOKEN=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.env.HOME+'/.kairos/credentials.json','utf8')).railwayApiToken??'')")`
    If empty, ask the human for a token from railway.app/account/tokens — an ACCOUNT token; a project-scoped token locks the CLI to that one existing project and provisioning will refuse to run there. NEVER echo, log, or write any token anywhere.
 2. **CLI**: `railway --version` — if missing, `npm install -g @railway/cli` (ask first if global installs need sign-off).
-3. **AI credential for the cloud worker**: ask the human for ONE of: `ANTHROPIC_API_KEY`, or a `claude setup-token` token (`CLAUDE_CODE_OAUTH_TOKEN`) to stay on their Claude plan. Their local Claude login does not travel to the cloud.
-4. **Spend limit gate — hard stop**: before deploying, the human must confirm they set a spend limit at console.anthropic.com → Billing → Limits. Do not proceed on "I'll do it later."
+3. **AI credential for the cloud worker — check before asking.** Onboarding usually already collected it: `~/.kairos/credentials.json` → `workerAiKey` (the value) + `workerAiKind` (which env var it belongs in: `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`). If present, USE IT silently — asking again makes it look like you lost their answer. Only if absent, ask the human for one of: `ANTHROPIC_API_KEY`, or a `claude setup-token` token (their local Claude login does not travel to the cloud).
+4. **Spend limit gate.** Check `kairos/.setup-state.json` → `answers.pathway.spendLimitConfirmed` — if `true`, the human already confirmed during onboarding; don't re-ask. Otherwise this is a hard stop: they must confirm the limit is set at console.anthropic.com → Billing → Limits before you deploy. Do not proceed on "I'll do it later."
 5. Read `kairos/kairos.json` for `timezone` and `worker.token` (the generated `KAIROS_WORKER_TOKEN`); `~/.kairos/credentials.json` has the CreatorOS `apiKey`.
 
 ## Procedure
@@ -18,7 +18,8 @@ Run from the workspace root:
 
 1. `railway unlink` (a 'not linked' error is fine), then `railway init --name kairos-worker` — ALWAYS a fresh project; never reuse an existing one.
 2. Set every variable in one shot (values from the sources above — compose the command yourself, never show values in your report):
-   `railway variables --set "CREATOROS_API_KEY=…" --set "ANTHROPIC_API_KEY=…" (or CLAUDE_CODE_OAUTH_TOKEN) --set "KAIROS_WORKER_TOKEN=…" --set "TZ=<timezone>" --set "RAILWAY_DOCKERFILE_PATH=Dockerfile.worker"`
+   `railway variables --set "CREATOROS_API_KEY=…" --set "<workerAiKind>=<workerAiKey>" --set "KAIROS_WORKER_TOKEN=…" --set "TZ=<timezone>" --set "RAILWAY_DOCKERFILE_PATH=Dockerfile.worker"`
+   The AI variable NAME comes from `workerAiKind` — a setup-token saved as `CLAUDE_CODE_OAUTH_TOKEN` must not be deployed as `ANTHROPIC_API_KEY`.
    `RAILWAY_DOCKERFILE_PATH` is what makes Railway build from `Dockerfile.worker` instead of autodetecting.
 3. **Know what ships before uploading.** Make sure `.railwayignore` exists in the workspace root with at least: `node_modules`, `.git`, `logs`, `creatoros` — the Docker build runs `npm ci` itself, and uploading node_modules (~350MB) chokes `railway up`. What DOES ship, on purpose: `src/` + package files + `Dockerfile.worker` (the code), `kairos/` (config, skills, automations.json), `templates/`, and `content-library/` (media the posting automations publish — if it's huge, warn the human that every deploy re-uploads it).
 4. `railway up --detach` — uploads this workspace and builds. Watch with `railway logs --build` until the build succeeds; on failure, read the error, fix, re-up.

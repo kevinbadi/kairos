@@ -179,11 +179,21 @@ export function renderSetupPrompt(state: InterviewState): string {
     'Verify every connected account is healthy (account_health) and flag anything that needs a reconnect.',
   ];
   if (pathway?.automationTarget === 'railway' && !pathway.workerUrl) {
-    tasks.push(
-      pathway.railwayTokenSaved
-        ? 'Provision my Railway worker for me — my Railway API token is saved in ~/.kairos. Follow the provision-railway skill: railway init, upload this workspace with railway up, set every variable (you will need to ask me for an AI credential for the cloud worker, and I must confirm my Anthropic spend limit is set BEFORE you deploy), generate the domain, save worker.url + railway.serviceId to kairos/kairos.json, and verify /health. Never print any secret.'
-        : 'My Railway worker is not deployed yet. Walk me through kairos/RAILWAY.md step by step when I am ready — or if I give you a Railway API token, provision it yourself via the provision-railway skill. Once live, save the URL to kairos/kairos.json under worker.url.',
-    );
+    if (pathway.railwayTokenSaved) {
+      const aiNote = pathway.aiCredentialSaved
+        ? 'My cloud AI credential is ALREADY SAVED in ~/.kairos/credentials.json (workerAiKey; workerAiKind names its env var) — use it, do NOT ask me for it again.'
+        : 'You will need to ask me for an AI credential for the cloud worker.';
+      const spendNote = pathway.spendLimitConfirmed
+        ? 'I already confirmed my Anthropic spend limit is set — no need to re-ask.'
+        : 'I must confirm my Anthropic spend limit is set BEFORE you deploy.';
+      tasks.push(
+        `Provision my Railway worker for me — my Railway API token is saved in ~/.kairos. ${aiNote} ${spendNote} Follow the provision-railway skill: railway init, upload this workspace with railway up, set every variable, generate the domain, save worker.url + railway.serviceId to kairos/kairos.json, and verify /health. Never print any secret.`,
+      );
+    } else {
+      tasks.push(
+        'My Railway worker is not deployed yet. Walk me through kairos/RAILWAY.md step by step when I am ready — or if I give you a Railway API token, provision it yourself via the provision-railway skill. Once live, save the URL to kairos/kairos.json under worker.url.',
+      );
+    }
   }
   tasks.push(
     `Onboarding set up ZERO automations on purpose — I pick my own set. Walk me through the menu one item at a time and ask what I want: auto-replies to comments and DMs (with a persona I define), comments-to-DM funnels, scheduled content posting, recurring analytics reports. Set up ONLY what I approve on the ${pathway?.automationTarget ?? 'local'} pathway, confirm exact copy with me before anything goes live, save the choices to kairos/kairos.json, and verify with list_funnels / list_cron_automations. "None for now" is a valid answer — don't push.`,
