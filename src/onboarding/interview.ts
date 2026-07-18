@@ -47,7 +47,6 @@ import {
   renderTutorialsMd,
 } from './render.js';
 import { askBlock, askList } from '../ui/prompts.js';
-import { RAILWAY_SPEND_LIMIT_WARNING } from '../automations/crons.js';
 import { fetchWorkerState } from '../dashboard/worker.js';
 
 const TEMPLATES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'templates');
@@ -398,11 +397,17 @@ async function stepPathway(state: InterviewState, paths: KairosPaths): Promise<v
   // variables, domain) in the first chat. Already deployed → verify LIVE
   // right here. No token, no deploy → guide fallback.
   say(
-    `You don't set up Railway yourself — I do. Create the account (railway.app, Hobby plan), grab an API token at railway.app/account/tokens, and paste it here. In our first chat I'll build the whole environment: project, this workspace uploaded, every variable set, public domain generated, health-checked.\n⚠ ${RAILWAY_SPEND_LIMIT_WARNING}`,
+    'Cloud it is. The whole setup boils down to two keys that power the engine up there:\n' +
+      '  1. Your CreatorOS key ✓ — already have it from a minute ago. That\'s how the worker posts and replies.\n' +
+      "  2. An AI key — the worker's brain. Your Claude login lives on this Mac and can't follow it into the cloud,\n" +
+      '     so the worker gets its own: an Anthropic API key, or a Claude plan token (from `claude setup-token`).',
+  );
+  say(
+    "The building itself is my job, not yours. Create a Railway account (railway.app, the Hobby plan is fine), grab an API token at railway.app/account/tokens, and paste it here — in our first chat I'll assemble everything: project created, this workspace uploaded, both keys installed, live URL generated and health-checked.",
   );
   const railwayApiToken = (
     await password({
-      message: 'Railway API token (blank — skip, you get a manual deploy guide instead):',
+      message: 'Railway API token (blank — skip, and I\'ll give you a manual deploy guide instead):',
       mask: '*',
     })
   ).trim();
@@ -418,37 +423,46 @@ async function stepPathway(state: InterviewState, paths: KairosPaths): Promise<v
   if (railwayApiToken) {
     const envKey = process.env.ANTHROPIC_API_KEY?.trim();
     const aiChoice = await select({
-      message: 'AI credential for the cloud worker:',
+      message: 'Key #2 — the AI brain for the cloud worker:',
       choices: [
-        ...(envKey ? [{ name: `Use the ANTHROPIC_API_KEY already in this environment (${maskKey(envKey)})`, value: 'env' as const }] : []),
-        { name: 'Paste an Anthropic API key', value: 'anthropic' as const },
-        { name: 'Paste a `claude setup-token` token (stays on your Claude Pro/Max plan)', value: 'oauth' as const },
-        { name: 'Skip — I\'ll hand it to Kai in chat before the deploy', value: 'skip' as const },
+        ...(envKey ? [{ name: `Use the Anthropic key already in this shell (${maskKey(envKey)})`, value: 'env' as const }] : []),
+        { name: 'Anthropic API key (pay per use, needs a spend limit)', value: 'anthropic' as const },
+        { name: 'Claude plan token — run `claude setup-token` in another terminal (no separate bill, rides your Pro/Max plan)', value: 'oauth' as const },
+        { name: "Skip for now — I'll ask for it in chat before anything deploys", value: 'skip' as const },
       ],
     });
+    let usedApiKey = false;
     if (aiChoice === 'env' && envKey) {
       await saveWorkerAiCredential('ANTHROPIC_API_KEY', envKey);
       aiCredentialSaved = true;
+      usedApiKey = true;
     } else if (aiChoice === 'anthropic' || aiChoice === 'oauth') {
       const value = (await password({ message: 'Paste it:', mask: '*' })).trim();
       if (value) {
         await saveWorkerAiCredential(aiChoice === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'CLAUDE_CODE_OAUTH_TOKEN', value);
         aiCredentialSaved = true;
+        usedApiKey = aiChoice === 'anthropic';
       }
     }
-    if (aiCredentialSaved) {
+    if (aiCredentialSaved && usedApiKey) {
+      // An API key billing an unattended agent is the one place to slow down.
+      say('One guardrail before that key goes anywhere: the worker runs unattended, and an uncapped API key is an uncapped bill.');
       spendLimitConfirmed = await confirm({
-        message: 'Is your Anthropic spend limit set (console.anthropic.com → Billing → Limits)? Required before I deploy anything.',
+        message: 'Spend limit set at console.anthropic.com → Billing → Limits?',
         default: false,
       });
       if (!spendLimitConfirmed) {
-        say("No deploy until it's set, then — I'll hold the launch and you can confirm in chat with \"spend limit is set, build my worker\".");
+        say('Then I hold the launch. Set it whenever, and tell me in chat: "spend limit is set, build my worker".');
       }
+    } else if (aiCredentialSaved) {
+      // Plan token → billing rides the Claude plan; no separate API bill to cap.
+      spendLimitConfirmed = true;
+      say('Plan token saved — the worker thinks on your Claude plan, no separate API bill.');
     }
   }
   const workerUrl = (
     await input({
-      message: 'Worker URL, if a Railway worker is already deployed (blank — not yet):',
+      message: "Already have a Railway worker running? Paste its URL (blank — not yet, I'll build it):",
     })
   ).trim();
 
