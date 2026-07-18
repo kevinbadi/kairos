@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   parseDomain,
+  parseProjectName,
   parseServiceId,
   provisionRailwayWorker,
   provisionVariableArgs,
@@ -83,5 +84,45 @@ describe('provisionRailwayWorker orchestration (mocked CLI)', () => {
     });
     const result = await provisionRailwayWorker(INPUTS, () => {}, runner as never);
     expect(result.ok).toBe(true);
+  });
+
+  it('a stale link to another project is unlinked, then the real project is created', async () => {
+    let statusCalls = 0;
+    const calls: string[][] = [];
+    const runner = vi.fn(async (args: string[]) => {
+      calls.push(args);
+      if (args[0] === 'status') {
+        statusCalls++;
+        // First status: the folder is linked to some unrelated app.
+        // After unlink+init: linked to kairos-worker as intended.
+        return { code: 0, stdout: JSON.stringify({ name: statusCalls === 1 ? 'my-old-blog' : 'kairos-worker' }), stderr: '' };
+      }
+      if (args[0] === 'domain') return { code: 0, stdout: 'kairos-w.up.railway.app', stderr: '' };
+      return { code: 0, stdout: '', stderr: '' };
+    });
+    const progress: string[] = [];
+    const result = await provisionRailwayWorker(INPUTS, (l) => progress.push(l), runner as never);
+    expect(result.ok).toBe(true);
+    expect(calls.some((a) => a[0] === 'unlink')).toBe(true);
+    expect(progress.some((l) => l.includes('my-old-blog'))).toBe(true);
+  });
+
+  it('REFUSES to deploy onto a mismatched project (stale link that will not clear)', async () => {
+    const runner = cli({
+      status: { code: 0, stdout: JSON.stringify({ project: { name: 'my-old-blog' } }), stderr: '' },
+    });
+    const result = await provisionRailwayWorker(INPUTS, () => {}, runner as never);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('my-old-blog');
+    expect(result.error).toContain('kairos-worker');
+    // and crucially: no variables were set, nothing was uploaded
+    expect(runner.mock.calls.map((c) => (c[0] as string[])[0])).not.toContain('variables');
+    expect(runner.mock.calls.map((c) => (c[0] as string[])[0])).not.toContain('up');
+  });
+
+  it('parses the project name from both status shapes', () => {
+    expect(parseProjectName(JSON.stringify({ name: 'kairos-worker' }))).toBe('kairos-worker');
+    expect(parseProjectName(JSON.stringify({ project: { name: 'other' } }))).toBe('other');
+    expect(parseProjectName('not json')).toBe(null);
   });
 });

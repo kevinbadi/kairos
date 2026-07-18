@@ -403,7 +403,7 @@ async function stepPathway(state: InterviewState, paths: KairosPaths): Promise<v
       '     so the worker gets its own: an Anthropic API key, or a Claude plan token (from `claude setup-token`).',
   );
   say(
-    "The building itself is my job, not yours. Create a Railway account (railway.app, the Hobby plan is fine), grab an API token at railway.app/account/tokens, and paste it here — in our first chat I'll assemble everything: project created, this workspace uploaded, both keys installed, live URL generated and health-checked.",
+    "The building itself is my job, not yours. Create a Railway account (railway.app, the Hobby plan is fine), grab an API token at railway.app/account/tokens (an account token — a project-scoped one can't create new projects), and paste it here — in our first chat I'll assemble everything: project created, this workspace uploaded, both keys installed, live URL generated and health-checked.",
   );
   const railwayApiToken = (
     await password({

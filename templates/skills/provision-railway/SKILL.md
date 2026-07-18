@@ -6,7 +6,7 @@ Build the user's Railway worker environment end to end: project, workspace uploa
 
 1. **Token**: the CLI reads `RAILWAY_API_TOKEN`. It's saved in `~/.kairos/credentials.json` under `railwayApiToken` (onboarding put it there). Export it for your commands without ever printing it:
    `export RAILWAY_API_TOKEN=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.env.HOME+'/.kairos/credentials.json','utf8')).railwayApiToken??'')")`
-   If empty, ask the human for a token from railway.app/account/tokens. NEVER echo, log, or write any token anywhere.
+   If empty, ask the human for a token from railway.app/account/tokens — an ACCOUNT token; a project-scoped token locks the CLI to that one existing project and provisioning will refuse to run there. NEVER echo, log, or write any token anywhere.
 2. **CLI**: `railway --version` — if missing, `npm install -g @railway/cli` (ask first if global installs need sign-off).
 3. **AI credential for the cloud worker**: ask the human for ONE of: `ANTHROPIC_API_KEY`, or a `claude setup-token` token (`CLAUDE_CODE_OAUTH_TOKEN`) to stay on their Claude plan. Their local Claude login does not travel to the cloud.
 4. **Spend limit gate — hard stop**: before deploying, the human must confirm they set a spend limit at console.anthropic.com → Billing → Limits. Do not proceed on "I'll do it later."
@@ -29,7 +29,7 @@ Run from the workspace root:
 ## Judgment rules
 
 - **Secrets never appear in output.** Mask everything as `…last4`. Never write a secret into any repo file — variables live on Railway, tokens in ~/.kairos.
-- Idempotence: if `railway status` shows the project already exists, don't create a second one — link (`railway link`) and continue from the failed step.
+- Idempotence — but only for OUR project: run `railway status` FIRST. Linked to a project named `kairos-worker`? Reuse it and continue from the failed step. Linked to ANYTHING else (a stale link from an earlier attempt, or some unrelated app)? `railway unlink`, then `railway init --name kairos-worker` — NEVER deploy the worker onto an existing unrelated project, even if reusing it looks convenient.
 - If the build fails on the Dockerfile, check `RAILWAY_DOCKERFILE_PATH` was actually set before re-running.
 - Cost honesty: remind the human this runs ~$5/mo on Hobby plus AI usage; the spend limit is the backstop.
 - Any step you cannot complete non-interactively (e.g., account not on a paid plan): stop, tell the human exactly what to click, and resume after.

@@ -54,6 +54,17 @@ export function parseDomain(output: string): string | null {
   return match ? `https://${match[1]}` : null;
 }
 
+/** Pull the linked project name out of `railway status --json` output. */
+export function parseProjectName(output: string): string | null {
+  try {
+    const parsed = JSON.parse(output) as { name?: string; project?: { name?: string } };
+    const name = parsed.project?.name ?? parsed.name;
+    return typeof name === 'string' && name ? name : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Pull the service id out of `railway status --json` output. */
 export function parseServiceId(output: string): string | null {
   try {
@@ -107,11 +118,34 @@ export async function provisionRailwayWorker(
     error: `${step}: ${detail.trim().slice(0, 300) || 'no output'}`,
   });
 
+  const wanted = inputs.projectName ?? 'kairos-worker';
+
+  // A stale link — an earlier attempt, or some unrelated app this folder
+  // once deployed — is the classic way keys and a workspace land on the
+  // WRONG project. Check what this folder is linked to before creating.
+  const pre = await runner(['status', '--json'], root, token, 60_000);
+  const linked = parseProjectName(pre.stdout);
+  if (linked && linked !== wanted) {
+    onProgress(`This folder was linked to "${linked}" — unlinking; the worker gets its own project.`);
+    await runner(['unlink'], root, token, 60_000); // best-effort; verified below
+  }
+
   onProgress('Creating the Railway project…');
-  const init = await runner(['init', '--name', inputs.projectName ?? 'kairos-worker'], root, token, 120_000);
-  // "already exists"-style failures are fine — link and continue.
+  const init = await runner(['init', '--name', wanted], root, token, 120_000);
+  // "already exists"-style failures are fine ONLY when the link check
+  // below confirms we ended up on OUR project.
   if (init.code !== 0 && !/already|exists|linked/i.test(init.stdout + init.stderr)) {
     return fail('railway init', init.stderr || init.stdout);
+  }
+
+  // Never deploy onto a project that isn't ours — verify the link by name.
+  const post = await runner(['status', '--json'], root, token, 60_000);
+  const nowLinked = parseProjectName(post.stdout);
+  if (nowLinked && nowLinked !== wanted) {
+    return fail(
+      'railway link',
+      `this folder ended up linked to "${nowLinked}" instead of "${wanted}". If the token is project-scoped, replace it with an ACCOUNT token from railway.app/account/tokens; otherwise run \`railway unlink\` in the workspace and retry.`,
+    );
   }
 
   onProgress('Setting the service variables (keys, worker token, timezone)…');
