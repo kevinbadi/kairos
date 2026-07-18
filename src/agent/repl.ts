@@ -111,6 +111,84 @@ class Spinner {
   }
 }
 
+/** What the turn loop needs from a spinner — Spinner and HatchSpinner both fit. */
+interface TurnSpinner {
+  start(label: string): void;
+  setLabel(label: string): void;
+  stop(): void;
+}
+
+/**
+ * The very first prompt after onboarding cold-starts the whole agent
+ * environment — a long, silent wait. So the wait becomes the moment:
+ * an egg. The Kairos star incubates inside a shell that cracks open in
+ * stages as the environment spins up, and the first sign of life from
+ * the agent plays the birth line. Every later turn gets the plain
+ * spinner; hatching only happens once.
+ */
+export class HatchSpinner implements TurnSpinner {
+  private timer: NodeJS.Timeout | null = null;
+  private startedAt = Date.now();
+  private frame = 0;
+  private born = false;
+  private readonly enabled = Boolean(process.stdout.isTTY);
+  /** After the birth, this behaves like the ordinary spinner. */
+  private readonly plain = new Spinner();
+
+  private static readonly STAGES = [
+    { after: 0, shell: ['(', ')'], label: 'incubating your CreatorOS super-agent' },
+    { after: 6, shell: ['{', '}'], label: 'the shell is cracking' },
+    { after: 12, shell: ['⟩', '⟨'], label: 'almost there — your agent is hatching' },
+  ] as const;
+
+  start(label: string): void {
+    if (this.born) {
+      this.plain.start(label);
+      return;
+    }
+    if (!this.enabled) {
+      console.log('incubating your CreatorOS super-agent…');
+      return;
+    }
+    if (this.timer) return;
+    padBottom();
+    this.startedAt = Date.now();
+    process.stdout.write('\x1b[?25l');
+    this.timer = setInterval(() => this.render(), 110);
+    this.render();
+  }
+
+  setLabel(label: string): void {
+    if (this.born) this.plain.setLabel(label);
+    // pre-birth the staged labels tell the story — outside labels wait
+  }
+
+  private render(): void {
+    const seconds = Math.floor((Date.now() - this.startedAt) / 1000);
+    const stage = [...HatchSpinner.STAGES].reverse().find((s) => seconds >= s.after)!;
+    const star = FRAMES[this.frame++ % FRAMES.length];
+    process.stdout.write(
+      `\r\x1b[2K${DIM}${stage.shell[0]}${RESET} ${AMBER}${star}${RESET} ${DIM}${stage.shell[1]}${RESET} ${stage.label}… ${DIM}(${seconds}s)${RESET}`,
+    );
+  }
+
+  /** First sign of life — whatever stops the spinner first delivers the birth. */
+  stop(): void {
+    if (this.born) {
+      this.plain.stop();
+      return;
+    }
+    this.born = true;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+      process.stdout.write(
+        `\r\x1b[2K${AMBER}✧ ✻ ✧${RESET}  ${BOLD}hatched${RESET} ${DIM}— your CreatorOS agent is born.${RESET}\n\n\x1b[?25h`,
+      );
+    }
+  }
+}
+
 /** Listen for a bare ESC while a turn runs; returns a disarm function. */
 function armEscInterrupt(onEsc: () => void): () => void {
   const stdin = process.stdin;
@@ -324,6 +402,7 @@ export async function runRepl(
   client: CreatorOSClient,
   config: KairosConfig | null,
   workspaceRoot: string,
+  options: { justOnboarded?: boolean } = {},
 ): Promise<void> {
   // Brain readiness — if the Claude connection fails, the first question
   // is which AI model to use instead.
@@ -369,6 +448,8 @@ export async function runRepl(
       : (process.env as Record<string, string>);
 
   let sessionId: string | undefined;
+  // The first turn right after onboarding hatches instead of spinning.
+  let awaitingBirth = Boolean(options.justOnboarded);
 
   while (true) {
     const userInput = await readUserInput();
@@ -395,7 +476,8 @@ export async function runRepl(
       continue;
     }
 
-    const spinner = new Spinner();
+    const spinner: TurnSpinner = awaitingBirth && !sessionId ? new HatchSpinner() : new Spinner();
+    awaitingBirth = false;
     try {
       const turn = query({
         prompt: trimmed,
@@ -413,7 +495,13 @@ export async function runRepl(
       const disarm = armEscInterrupt(() => {
         void turn.interrupt().catch(() => {});
       });
-      spinner.start(sessionId ? 'kai is thinking…' : 'waking the engine — first reply takes ~15s…');
+      spinner.start(
+        spinner instanceof HatchSpinner
+          ? ''
+          : sessionId
+            ? 'kai is thinking…'
+            : 'waking the engine — first reply takes ~15s…',
+      );
       try {
         for await (const message of turn) {
           if (message.type === 'system' && message.subtype === 'init') {

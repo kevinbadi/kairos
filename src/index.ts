@@ -74,7 +74,8 @@ async function main(): Promise<void> {
       '\x1b[2mTip: run `npm link` once in this repo and `kai` opens a session from any terminal. ' +
         'Each terminal is its own conversation; they all share this workspace.\x1b[0m',
     );
-    await runRepl(client, config, paths.root);
+    // First prompt hatches the agent — the cold start becomes the birth.
+    await runRepl(client, config, paths.root, { justOnboarded: true });
     return;
   }
 

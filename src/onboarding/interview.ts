@@ -8,6 +8,7 @@ import { detectBrain, type BrainConfig } from '../util/brain.js';
 import { promptBrainChoice, toSettings, verifyBrainInteractive } from '../config/brainSetup.js';
 import { cp, mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CreatorOSClient, isValidKeyShape } from '../client/client.js';
@@ -29,6 +30,7 @@ import {
   parseProducts,
   renderBrandMd,
   renderProfilesMd,
+  renderRailwayGuide,
   renderSetupPrompt,
   renderSetupSummary,
   renderTutorialsMd,
@@ -72,6 +74,13 @@ export async function runInterview(root: string = process.cwd()): Promise<Interv
     await saveState(paths.setupStateJson, state);
   }
 
+  // ---- The infrastructure call, early: everything downstream
+  // initializes against this environment ----
+  if (!isStepDone(state, 'pathway')) {
+    await stepPathway(state, paths);
+    await saveState(paths.setupStateJson, state);
+  }
+
   // ---- Key(s) + accounts ----
   const client = await stepKey(paths, state);
 
@@ -92,13 +101,7 @@ export async function runInterview(root: string = process.cwd()): Promise<Interv
     accounts = (await client.listAccounts()).accounts;
   }
 
-  // ---- Step 4: automation pathway ----
-  if (!isStepDone(state, 'pathway')) {
-    await stepPathway(state);
-    await saveState(paths.setupStateJson, state);
-  }
-
-  // ---- Step 5: finish in character ----
+  // ---- Finish in character ----
   const config = await stepFinish(client, paths, state, accounts);
   return { client, config };
 }
@@ -341,33 +344,73 @@ async function stepProfiles(
   return accounts;
 }
 
-async function stepPathway(state: InterviewState): Promise<void> {
-  say('Last setup call: where do your automations live?');
+async function stepPathway(state: InterviewState, paths: KairosPaths): Promise<void> {
+  say(
+    'First infrastructure call, and it shapes everything after it: where does your automation system live?',
+  );
+  say(
+    'Why I recommend Railway: automations are only as reliable as the machine they run on. ' +
+      "A laptop that's asleep at post time misses the post — and the comment, and the DM sitting behind it. " +
+      'The Railway worker keeps your agent alive 24/7 in the cloud, so engagement gets answered the moment it happens. ' +
+      'Local is great for trying things out on your Claude plan; the cloud is where the agent actually earns its keep.',
+  );
   const automationTarget = await select({
     message: 'Automation pathway:',
     choices: [
       {
-        name: 'Local (this Mac) — runs on your existing Claude plan; the machine must be awake at scheduled times',
-        value: 'local' as const,
+        name: 'Railway (recommended) — one always-on cloud worker runs everything; your machine can be off; scales from solo to client work',
+        value: 'railway' as const,
       },
       {
-        name: 'VPS (Railway) — always-on cloud; needs an AI API key (Claude etc.) on the service',
-        value: 'railway' as const,
+        name: 'Local (this Mac) — free, runs on your Claude plan; the machine must be awake at scheduled times',
+        value: 'local' as const,
       },
     ],
   });
-  if (automationTarget === 'railway') {
-    say(
-      `For the comment & messaging agents to run autonomously in the cloud, the service needs an AI credential: ANTHROPIC_API_KEY, or — to stay on your Claude plan (Pro/Max) — a long-lived token from \`claude setup-token\` set as CLAUDE_CODE_OAUTH_TOKEN.\n⚠ ${RAILWAY_SPEND_LIMIT_WARNING}`,
-    );
-  } else {
-    say('Local runs use your Claude plan through the claude CLI — no separate AI API key needed.');
+  const timezone = (
+    await input({
+      message: 'Your timezone (IANA name — schedules run in it):',
+      default: Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
+    })
+  ).trim();
+
+  if (automationTarget === 'local') {
+    say('Local it is — runs use your Claude plan through the claude CLI, no extra keys. Switch to Railway any time by re-running setup or asking me in chat.');
+    state.answers.pathway = { automationTarget, timezone };
+    markStepDone(state, 'pathway');
+    return;
   }
-  const timezone = await input({
-    message: 'Your timezone (IANA name):',
-    default: Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
-  });
-  state.answers.pathway = { automationTarget, timezone: timezone.trim() };
+
+  // Railway: initialize as much as possible on the user's behalf — token
+  // generated here, deploy guide written with every value filled in.
+  say(
+    `The worker needs two credentials on Railway: your CreatorOS key, and an AI credential — ANTHROPIC_API_KEY, or a token from \`claude setup-token\` (CLAUDE_CODE_OAUTH_TOKEN) to stay on your Claude plan.\n⚠ ${RAILWAY_SPEND_LIMIT_WARNING}`,
+  );
+  const workerToken = randomBytes(24).toString('hex');
+  const workerUrl = (
+    await input({
+      message: 'Worker URL, if the Railway service is already deployed (blank — the deploy guide covers it):',
+    })
+  ).trim();
+  const railwayServiceId = (
+    await input({
+      message: 'Railway service ID, for live deploy status on the dashboard (blank to skip):',
+    })
+  ).trim();
+
+  await mkdir(paths.kairosDir, { recursive: true });
+  await writeFile(join(paths.kairosDir, 'RAILWAY.md'), renderRailwayGuide({ timezone, workerToken }), 'utf8');
+  say(
+    `Done on my end: I generated your worker auth token and wrote the full deploy guide to kairos/RAILWAY.md — every value filled in, ~10 minutes of copy-paste on railway.app.${workerUrl ? '' : ' Deploy whenever; automations you set up in chat start running the moment the worker is live.'}`,
+  );
+
+  state.answers.pathway = {
+    automationTarget,
+    timezone,
+    workerToken,
+    workerUrl: workerUrl || undefined,
+    railwayServiceId: railwayServiceId || undefined,
+  };
   markStepDone(state, 'pathway');
 }
 
@@ -387,6 +430,10 @@ async function stepFinish(
     automationTarget: pathway.automationTarget,
     timezone: pathway.timezone,
     profileId,
+    ...(pathway.automationTarget === 'railway' && (pathway.workerUrl || pathway.workerToken)
+      ? { worker: { url: pathway.workerUrl, token: pathway.workerToken } }
+      : {}),
+    ...(pathway.railwayServiceId ? { railway: { serviceId: pathway.railwayServiceId } } : {}),
     // No automations are configured at onboarding — the user picks their
     // set in the first chat, and the agent fills these in with sign-off.
     funnel: { enabled: false, keywords: [], matchMode: 'contains', dmMessage: '', scope: 'account-wide', accountIds: [] },
@@ -416,6 +463,11 @@ async function stepFinish(
   • Recurring analytics reports
 Want none of them? Also fine — everything works manually through chat too.`,
   );
+  if (pathway.automationTarget === 'railway' && !pathway.workerUrl) {
+    say(
+      'One infrastructure step remains on your side: deploy the worker with kairos/RAILWAY.md (10 minutes, every value pre-filled). Automations you pick in chat are saved either way and start running the moment it goes live.',
+    );
+  }
 
   // State of the socials: follower stats + recent posts, with an honest read.
   say('Here\'s where your socials actually stand:');
