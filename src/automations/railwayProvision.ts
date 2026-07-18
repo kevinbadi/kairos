@@ -120,23 +120,15 @@ export async function provisionRailwayWorker(
 
   const wanted = inputs.projectName ?? 'kairos-worker';
 
-  // A stale link — an earlier attempt, or some unrelated app this folder
-  // once deployed — is the classic way keys and a workspace land on the
-  // WRONG project. Check what this folder is linked to before creating.
-  const pre = await runner(['status', '--json'], root, token, 60_000);
-  const linked = parseProjectName(pre.stdout);
-  if (linked && linked !== wanted) {
-    onProgress(`This folder was linked to "${linked}" — unlinking; the worker gets its own project.`);
-    await runner(['unlink'], root, token, 60_000); // best-effort; verified below
-  }
+  // Default is a BRAND-NEW project, no matter what this folder was linked
+  // to before — stale attempts and unrelated apps never get deployed onto.
+  // Railway project names aren't unique, so init always creates fresh.
+  onProgress('Clearing any existing Railway link — the worker gets a brand-new project…');
+  await runner(['unlink'], root, token, 60_000); // best-effort: "not linked" is fine
 
   onProgress('Creating the Railway project…');
   const init = await runner(['init', '--name', wanted], root, token, 120_000);
-  // "already exists"-style failures are fine ONLY when the link check
-  // below confirms we ended up on OUR project.
-  if (init.code !== 0 && !/already|exists|linked/i.test(init.stdout + init.stderr)) {
-    return fail('railway init', init.stderr || init.stdout);
-  }
+  if (init.code !== 0) return fail('railway init', init.stderr || init.stdout);
 
   // Never deploy onto a project that isn't ours — verify the link by name.
   const post = await runner(['status', '--json'], root, token, 60_000);

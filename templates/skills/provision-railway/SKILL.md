@@ -16,7 +16,7 @@ Build the user's Railway worker environment end to end: project, workspace uploa
 
 Run from the workspace root:
 
-1. `railway init --name kairos-worker` — creates the project (non-interactive with the token exported).
+1. `railway unlink` (a 'not linked' error is fine), then `railway init --name kairos-worker` — ALWAYS a fresh project; never reuse an existing one.
 2. Set every variable in one shot (values from the sources above — compose the command yourself, never show values in your report):
    `railway variables --set "CREATOROS_API_KEY=…" --set "ANTHROPIC_API_KEY=…" (or CLAUDE_CODE_OAUTH_TOKEN) --set "KAIROS_WORKER_TOKEN=…" --set "TZ=<timezone>" --set "RAILWAY_DOCKERFILE_PATH=Dockerfile.worker"`
    `RAILWAY_DOCKERFILE_PATH` is what makes Railway build from `Dockerfile.worker` instead of autodetecting.
@@ -29,7 +29,7 @@ Run from the workspace root:
 ## Judgment rules
 
 - **Secrets never appear in output.** Mask everything as `…last4`. Never write a secret into any repo file — variables live on Railway, tokens in ~/.kairos.
-- Idempotence — but only for OUR project: run `railway status` FIRST. Linked to a project named `kairos-worker`? Reuse it and continue from the failed step. Linked to ANYTHING else (a stale link from an earlier attempt, or some unrelated app)? `railway unlink`, then `railway init --name kairos-worker` — NEVER deploy the worker onto an existing unrelated project, even if reusing it looks convenient.
+- ALWAYS a brand-new project: `railway unlink` first (ignore 'not linked' errors), then `railway init --name kairos-worker`. NEVER link to or deploy onto any existing project — not a stale kairos-worker from an earlier attempt, not an unrelated app, nothing. If init keeps failing, STOP and report the exact error to the human instead of retrying in a loop or hunting for an existing project to reuse.
 - If the build fails on the Dockerfile, check `RAILWAY_DOCKERFILE_PATH` was actually set before re-running.
 - Cost honesty: remind the human this runs ~$5/mo on Hobby plus AI usage; the spend limit is the backstop.
 - Any step you cannot complete non-interactively (e.g., account not on a paid plan): stop, tell the human exactly what to click, and resume after.

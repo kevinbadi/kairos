@@ -77,34 +77,27 @@ describe('provisionRailwayWorker orchestration (mocked CLI)', () => {
     expect(result.error).toContain('build blew up');
   });
 
-  it('an "already exists" init is not a failure — provisioning continues', async () => {
+  it('any init failure stops the run — no silent reuse of existing projects', async () => {
     const runner = cli({
       init: { code: 1, stdout: '', stderr: 'Project already exists and is linked' },
-      domain: { code: 0, stdout: 'kairos-w.up.railway.app', stderr: '' },
     });
     const result = await provisionRailwayWorker(INPUTS, () => {}, runner as never);
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('railway init');
   });
 
-  it('a stale link to another project is unlinked, then the real project is created', async () => {
-    let statusCalls = 0;
+  it('ALWAYS unlinks first — every run gets a brand-new project', async () => {
     const calls: string[][] = [];
     const runner = vi.fn(async (args: string[]) => {
       calls.push(args);
-      if (args[0] === 'status') {
-        statusCalls++;
-        // First status: the folder is linked to some unrelated app.
-        // After unlink+init: linked to kairos-worker as intended.
-        return { code: 0, stdout: JSON.stringify({ name: statusCalls === 1 ? 'my-old-blog' : 'kairos-worker' }), stderr: '' };
-      }
+      if (args[0] === 'status') return { code: 0, stdout: JSON.stringify({ name: 'kairos-worker' }), stderr: '' };
       if (args[0] === 'domain') return { code: 0, stdout: 'kairos-w.up.railway.app', stderr: '' };
       return { code: 0, stdout: '', stderr: '' };
     });
-    const progress: string[] = [];
-    const result = await provisionRailwayWorker(INPUTS, (l) => progress.push(l), runner as never);
+    const result = await provisionRailwayWorker(INPUTS, () => {}, runner as never);
     expect(result.ok).toBe(true);
-    expect(calls.some((a) => a[0] === 'unlink')).toBe(true);
-    expect(progress.some((l) => l.includes('my-old-blog'))).toBe(true);
+    // unlink comes before init — the stale link is gone before anything is created
+    expect(calls.findIndex((a) => a[0] === 'unlink')).toBeLessThan(calls.findIndex((a) => a[0] === 'init'));
   });
 
   it('REFUSES to deploy onto a mismatched project (stale link that will not clear)', async () => {
