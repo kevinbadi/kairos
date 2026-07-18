@@ -11,6 +11,7 @@
  *   GET  /api/health       credentials, config files, brain, last action
  *   GET  /api/activity     log entries + counters + heatmap (?workflow=&platform=&outcome=&limit=)
  *   GET  /api/automations  every automation: state, prompts, per-workflow stats
+ *   GET  /api/understanding the agent's mind: persona, goals, KPIs, rules, system prompt
  *   GET  /api/brand        the brand identity file ({path, mtime, content})
  *   PUT  /api/brand        save edits back to disk ({content})
  *   GET  /api/workflows    training/workflow files the agent runs on
@@ -36,6 +37,7 @@ import { buildSystemPrompt } from '../src/agent/systemPrompt.js';
 import { buildToolServer } from '../src/agent/tools.js';
 import { verifyAutomations } from '../src/automations/crons.js';
 import { workflowCatalog } from '../src/dashboard/workflows.js';
+import { parseBrandMd, deriveKpis, describeObjective, MISSION_PILLARS } from '../src/dashboard/understanding.js';
 import { readActivity, summarizeActivity } from '../src/util/activityLog.js';
 import { kairosPaths } from '../src/paths.js';
 import { sanitize } from '../src/util/sanitize.js';
@@ -225,6 +227,80 @@ async function automationsPayload(session: Session): Promise<unknown> {
     catalog: workflowCatalog(crons.code === 0 ? crons.stdout : ''),
     liveFunnels,
     perWorkflow: summary.perWorkflow,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* /api/understanding — everything the agent knows, in one payload     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The transparency panel's data: persona, objective, KPIs, engagement
+ * rules, what the account sells, and the literal system prompt — all
+ * read from the same files the agent reads.
+ */
+async function understandingPayload(session: Session): Promise<unknown> {
+  const paths = kairosPaths(session.workspaceRoot);
+  const config = session.config;
+  const summary = summarizeActivity(await readActivity(session.workspaceRoot));
+
+  let brand: ReturnType<typeof parseBrandMd> | null = null;
+  let brandMeta: { path: string; mtime: string } | null = null;
+  try {
+    const [content, s] = await Promise.all([readFile(paths.brandMd, 'utf8'), stat(paths.brandMd)]);
+    brand = parseBrandMd(content);
+    brandMeta = { path: relative(session.workspaceRoot, paths.brandMd), mtime: s.mtime.toISOString() };
+  } catch {
+    // no brand file yet — the panel shows how to create one
+  }
+
+  const engagement = config?.engagementAgent ?? null;
+  const objective = describeObjective(engagement?.objective);
+
+  const source = async (label: string, path: string, editRoute: string) => {
+    try {
+      const s = await stat(path);
+      return { label, path: relative(session.workspaceRoot, path), mtime: s.mtime.toISOString(), editRoute };
+    } catch {
+      return { label, path: relative(session.workspaceRoot, path), mtime: null, editRoute };
+    }
+  };
+
+  return {
+    configured: config !== null,
+    identity: engagement
+      ? {
+          persona: engagement.persona,
+          objective: engagement.objective,
+          objectiveLabel: objective?.label ?? null,
+          drives: objective?.drives ?? null,
+          objectiveDetail: engagement.objectiveDetail ?? null,
+          tone: config?.autoReplies?.comments.tone ?? config?.autoReplies?.messages.tone ?? null,
+        }
+      : null,
+    brand,
+    brandMeta,
+    engagement: {
+      comments: config?.autoReplies?.comments ?? null,
+      messages: config?.autoReplies?.messages ?? null,
+      funnel: config?.funnel?.enabled
+        ? {
+            keywords: config.funnel.keywords,
+            dmMessage: config.funnel.dmMessage,
+            link: config.funnel.link ?? null,
+          }
+        : null,
+      escalate: config?.autoReplies?.comments.escalate ?? config?.autoReplies?.messages.escalate ?? [],
+    },
+    kpis: deriveKpis(config, summary),
+    mission: MISSION_PILLARS,
+    mode: config?.mode ?? 'creator',
+    systemPrompt: buildSystemPrompt(config),
+    sources: await Promise.all([
+      source('brand pack (voice, offers, audience)', paths.brandMd, '/brand'),
+      source('agent config (persona, objective, automations)', paths.configJson, '/automations'),
+      source('profile map (account IDs)', paths.profilesMd, '/brand'),
+    ]),
   };
 }
 
@@ -457,6 +533,7 @@ export async function startDashboard(
         });
       }
       if (route === 'GET /api/automations') return json(res, 200, await automationsPayload(session));
+      if (route === 'GET /api/understanding') return json(res, 200, await understandingPayload(session));
       if (route === 'GET /api/brand') return json(res, 200, await brandPayload(session));
       if (route === 'GET /api/workflows') return json(res, 200, await workflowFilesPayload(session));
       if (route === 'PUT /api/brand' || route === 'PUT /api/workflows') {

@@ -13,8 +13,6 @@ export const INTERVIEW_STEPS = [
   'key',
   'brand',
   'profiles',
-  'funnel',
-  'autoReplies',
   'pathway',
   'finish',
 ] as const;
@@ -52,23 +50,6 @@ export interface InterviewState {
     clientLabels?: string[];
     brand?: BrandAnswers;
     profiles?: Array<{ accountId: string; platform: string; username: string }>;
-    funnel?: {
-      enabled: boolean;
-      keywords?: string[];
-      dmMessage?: string;
-      link?: string;
-      accountIds?: string[];
-      scope?: 'account-wide' | 'per-post';
-    };
-    engagement?: {
-      persona: string;
-      objective: 'book-calls' | 'funnel' | 'free-value' | 'rapport' | 'other';
-      objectiveDetail?: string;
-    };
-    autoReplies?: {
-      comments: { enabled: boolean; platforms: string[]; tone: string; escalate: string[] };
-      messages: { enabled: boolean; platforms: string[]; tone: string; escalate: string[] };
-    };
     pathway?: { automationTarget: 'local' | 'railway'; timezone: string };
   };
 }

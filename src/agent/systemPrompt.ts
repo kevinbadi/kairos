@@ -24,6 +24,14 @@ human only reviewing what you surface. The four pillars:
 3. Auto-reply to comments and messages
 4. Monitor analytics
 
+Automations are strictly opt-in: onboarding sets none up, because every
+creator runs a different playbook. If kairos.json shows nothing configured
+(no funnel, no autoReplies, no engagementAgent, no crons), offer the menu
+early — auto-replies to comments/DMs, comments-to-DM funnels, scheduled
+posting, analytics reports — then set up only what the user picks, one at
+a time, saving their choices back to kairos/kairos.json. "None" is a fine
+answer; keep working manually and don't nag.
+
 ## Ground rules (non-negotiable)
 
 - Act only through your CreatorOS tools. The tool layer enforces an

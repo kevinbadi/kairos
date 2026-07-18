@@ -111,6 +111,86 @@ describe('activity log', () => {
   });
 });
 
+describe('agent understanding', () => {
+  const BRAND_MD = `# Brand Pack
+
+Kairos reads this before writing anything.
+
+## What this brand is about
+
+Fitness coaching for busy parents.
+
+## What we sell — products, services & CTA destinations
+
+- 1:1 coaching program — https://coach.example/apply
+- Free meal-prep guide _(no link yet)_
+
+## Voice
+
+- Sounds like: direct, warm, practical
+- Never: corporate
+- Emoji policy: none
+- Hashtag policy: none
+
+## Target audience
+
+Busy parents 30-45 who want results in 30 minutes a day.
+
+## Competitors to watch
+
+- @bigcoach
+- @otherbrand
+`;
+
+  it('parses BRAND.md back into the structure the agent understands', async () => {
+    const { parseBrandMd } = await import('../src/dashboard/understanding.js');
+    const brand = parseBrandMd(BRAND_MD);
+    expect(brand.about).toBe('Fitness coaching for busy parents.');
+    expect(brand.offers).toEqual([
+      { description: '1:1 coaching program', link: 'https://coach.example/apply' },
+      { description: 'Free meal-prep guide' },
+    ]);
+    expect(brand.voice.soundsLike).toEqual(['direct', 'warm', 'practical']);
+    expect(brand.voice.never).toBe('corporate');
+    expect(brand.audience).toContain('Busy parents');
+    expect(brand.competitors).toEqual(['@bigcoach', '@otherbrand']);
+  });
+
+  it('an edited/unrecognized brand file degrades to nulls, never throws', async () => {
+    const { parseBrandMd } = await import('../src/dashboard/understanding.js');
+    const brand = parseBrandMd('just some notes the user wrote\nno headings at all');
+    expect(brand.about).toBeNull();
+    expect(brand.offers).toEqual([]);
+    expect(brand.competitors).toEqual([]);
+  });
+
+  it('derives live KPIs from the activity log, objective-aware', async () => {
+    const { deriveKpis } = await import('../src/dashboard/understanding.js');
+    const now = new Date('2026-07-18T12:00:00Z');
+    const summary = summarizeActivity(
+      [
+        { ts: '2026-07-18T10:00:00Z', workflow: 'chat', action: 'reply_to_comment', outcome: 'sent' },
+        { ts: '2026-07-17T10:00:00Z', workflow: 'chat', action: 'send_message', outcome: 'sent' },
+        { ts: '2026-07-16T10:00:00Z', workflow: 'chat', action: 'send_message', outcome: 'failed', error: 'x' },
+      ],
+      now,
+    );
+    const kpis = deriveKpis(
+      {
+        version: 1,
+        automationTarget: 'local',
+        timezone: 'UTC',
+        engagementAgent: { persona: 'Maya', objective: 'book-calls' },
+      },
+      summary,
+    );
+    expect(kpis.find((k) => k.label === 'Comments answered')?.value).toBe('1');
+    expect(kpis.find((k) => k.label === 'Failure rate')?.value).toBe('33%');
+    expect(kpis.find((k) => k.label === 'Failure rate')?.state).toBe('bad');
+    expect(kpis.find((k) => k.label === 'Link shares (calls)')).toBeTruthy();
+  });
+});
+
 describe('dashboard UI shell', () => {
   it('ships the tokens, all panels, and never the internal vendor name', async () => {
     const pub = join(process.cwd(), 'dashboard', 'public');
@@ -121,7 +201,7 @@ describe('dashboard UI shell', () => {
     expect(css).toContain('--accent: #22d3ee');
     expect(css).toContain("html[data-theme='light']");
     expect(css).toContain('#0b1220');
-    for (const panel of ['overview', 'automations', 'brand', 'training', 'logs', 'chat']) {
+    for (const panel of ['overview', 'understanding', 'automations', 'brand', 'training', 'logs', 'chat']) {
       expect(registry).toContain(`./${panel}.js`);
     }
   });

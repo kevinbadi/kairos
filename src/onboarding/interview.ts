@@ -3,7 +3,7 @@
  * Conversational, one question at a time; every answer lands in a file
  * Kairos reads forever after. Resumable: state saves after every step.
  */
-import { checkbox, confirm, input, password, select } from '@inquirer/prompts';
+import { confirm, input, password, select } from '@inquirer/prompts';
 import { detectBrain, type BrainConfig } from '../util/brain.js';
 import { promptBrainChoice, toSettings, verifyBrainInteractive } from '../config/brainSetup.js';
 import { cp, mkdir, writeFile } from 'node:fs/promises';
@@ -11,21 +11,12 @@ import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CreatorOSClient, isValidKeyShape } from '../client/client.js';
-import {
-  COMMENT_REPLY_PLATFORMS,
-  MESSAGE_REPLY_PLATFORMS,
-  platformLabel,
-  supportsFunnels,
-} from '../client/platformMatrix.js';
+import { platformLabel } from '../client/platformMatrix.js';
 import type { SocialAccount } from '../client/types.js';
 import { maskKey } from '../util/mask.js';
 import { kairosPaths, type KairosPaths } from '../paths.js';
 import { resolveApiKey, saveApiKey, saveCredentials } from '../config/credentials.js';
-import {
-  DEFAULT_ESCALATION_TOPICS,
-  saveConfig,
-  type KairosConfig,
-} from '../config/kairosConfig.js';
+import { saveConfig, type KairosConfig } from '../config/kairosConfig.js';
 import {
   isStepDone,
   loadState,
@@ -43,14 +34,7 @@ import {
   renderTutorialsMd,
 } from './render.js';
 import { askBlock, askList } from '../ui/prompts.js';
-import { showEngagementPreview } from '../ui/preview.js';
-import { buildFunnelAutomation, describeFunnel } from '../automations/funnels.js';
-import {
-  createAutomation,
-  RAILWAY_SPEND_LIMIT_WARNING,
-  STARTER_CRONS,
-  verifyAutomations,
-} from '../automations/crons.js';
+import { RAILWAY_SPEND_LIMIT_WARNING } from '../automations/crons.js';
 
 const TEMPLATES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'templates');
 
@@ -108,25 +92,13 @@ export async function runInterview(root: string = process.cwd()): Promise<Interv
     accounts = (await client.listAccounts()).accounts;
   }
 
-  // ---- Step 4: the comments-to-DM funnel question ----
-  if (!isStepDone(state, 'funnel')) {
-    await stepFunnel(state, accounts);
-    await saveState(paths.setupStateJson, state);
-  }
-
-  // ---- Step 5: auto-replies ----
-  if (!isStepDone(state, 'autoReplies')) {
-    await stepAutoReplies(state, accounts);
-    await saveState(paths.setupStateJson, state);
-  }
-
-  // ---- Step 6: automation pathway ----
+  // ---- Step 4: automation pathway ----
   if (!isStepDone(state, 'pathway')) {
     await stepPathway(state);
     await saveState(paths.setupStateJson, state);
   }
 
-  // ---- Step 7: finish in character ----
+  // ---- Step 5: finish in character ----
   const config = await stepFinish(client, paths, state, accounts);
   return { client, config };
 }
@@ -369,166 +341,6 @@ async function stepProfiles(
   return accounts;
 }
 
-async function stepFunnel(state: InterviewState, accounts: SocialAccount[]): Promise<void> {
-  say(
-    'Now one of the most powerful features in CreatorOS: the comments-to-DM funnel. Someone comments a keyword on your post → they automatically get a DM with a link or offer.',
-  );
-  const wantsFunnel = await confirm({
-    message: 'When people comment on your posts, do you want to run a comments-to-DM funnel?',
-    default: true,
-  });
-  if (!wantsFunnel) {
-    state.answers.funnel = { enabled: false };
-    markStepDone(state, 'funnel');
-    say("No problem — I'll re-offer it whenever you upload new content. It's a one-minute setup.");
-    return;
-  }
-
-  const funnelAccounts = accounts.filter((a) => supportsFunnels(a.platform));
-  if (funnelAccounts.length === 0) {
-    say(
-      'Funnels run on Instagram and Facebook, and none of those are connected yet. Connect one in the CreatorOS app and ask me to set the funnel up any time.',
-    );
-    state.answers.funnel = { enabled: false };
-    markStepDone(state, 'funnel');
-    return;
-  }
-
-  const keywordsRaw = await input({
-    message: 'Trigger keyword(s), comma-separated (e.g. "LINK, GUIDE"):',
-    validate: (v) => v.split(',').some((s) => s.trim()) || 'At least one keyword.',
-  });
-  const linkedProducts = (state.answers.brand?.products ?? []).filter((p) => p.link);
-  const link =
-    linkedProducts.length > 0
-      ? await select({
-          message: 'Which link should the DM send?',
-          choices: [
-            ...linkedProducts.map((p) => ({ name: `${p.description} — ${p.link}`, value: p.link! })),
-            { name: 'Another link (type it next)', value: '__other__' },
-          ],
-        })
-      : '__other__';
-  const finalLink =
-    link === '__other__' ? (await input({ message: 'Link to send in the DM:' })).trim() : link;
-  const dmMessage = await askBlock(
-    'The DM message (the link is attached as a button — keep it under 640 chars):',
-    {
-      required: true,
-      validate: (v) => (v.length <= 640 ? true : `That's ${v.length} chars — keep it under 640.`),
-    },
-  );
-  const accountIds = await checkbox({
-    message: 'Run it on which accounts? (funnels are Instagram/Facebook)',
-    choices: funnelAccounts.map((a) => ({
-      name: `${platformLabel(a.platform)} @${a.username ?? '?'}`,
-      value: a._id,
-      checked: true,
-    })),
-  });
-
-  state.answers.funnel = {
-    enabled: true,
-    keywords: keywordsRaw.split(',').map((s) => s.trim()).filter(Boolean),
-    dmMessage: dmMessage.trim(),
-    link: finalLink || undefined,
-    accountIds,
-    scope: 'account-wide',
-  };
-  markStepDone(state, 'funnel');
-  say("Got it. I'll confirm the exact copy with you before it goes live — the DM goes out automatically to strangers, so you sign off first.");
-}
-
-async function stepAutoReplies(state: InterviewState, accounts: SocialAccount[]): Promise<void> {
-  // Optional — the gate comes before any agent programming.
-  const wantsEngagement = await confirm({
-    message: 'Want me to auto-handle comments and messages? (optional — you can turn this on later)',
-    default: true,
-  });
-  if (!wantsEngagement) {
-    state.answers.autoReplies = {
-      comments: { enabled: false, platforms: [], tone: '', escalate: DEFAULT_ESCALATION_TOPICS },
-      messages: { enabled: false, platforms: [], tone: '', escalate: DEFAULT_ESCALATION_TOPICS },
-    };
-    markStepDone(state, 'autoReplies');
-    say("Off for now. Say \"turn on auto-replies\" any time and we'll program the agent then.");
-    return;
-  }
-
-  say('Two questions program that agent — your answers drive the automations directly.');
-
-  // Q1: persona — how the agent chats.
-  const persona = await askBlock(
-    'Who is the agent when it chats? Give it a persona: a name if you like, how it talks, its energy. (e.g. "Maya — warm, punchy, jokes around, talks like a gym friend not a support desk")',
-    { required: true },
-  );
-
-  // Q2: objective — what every comment & DM conversation drives toward.
-  const objective = await select({
-    message: 'What is the agent trying to do with comments and messages?',
-    choices: [
-      { name: 'Book calls', value: 'book-calls' as const },
-      { name: 'Funnel to my website / app', value: 'funnel' as const },
-      { name: 'Give free value (guide, freebie, tips)', value: 'free-value' as const },
-      { name: 'Build rapport & community', value: 'rapport' as const },
-      { name: 'Something else', value: 'other' as const },
-    ],
-  });
-  const detailPrompts: Record<string, string> = {
-    'book-calls': 'Booking link (Calendly etc.):',
-    funnel: 'Website / app link to funnel people to:',
-    'free-value': 'What\'s the freebie, and the link to it?',
-    rapport: 'Anything specific to work toward? (empty line to skip)',
-    other: 'Describe the objective in your own words:',
-  };
-  const objectiveDetail = await askBlock(detailPrompts[objective]!, {
-    required: objective === 'other',
-  });
-  state.answers.engagement = {
-    persona,
-    objective,
-    objectiveDetail: objectiveDetail || undefined,
-  };
-
-  const connected = new Set(accounts.map((a) => a.platform));
-  const commentChoices = COMMENT_REPLY_PLATFORMS.filter((p) => connected.has(p));
-  const messageChoices = MESSAGE_REPLY_PLATFORMS.filter((p) => connected.has(p));
-
-  const commentPlatforms =
-    commentChoices.length > 0
-      ? await checkbox({
-          message: "Comment replies on which platforms? (TikTok comments aren't supported by CreatorOS)",
-          choices: commentChoices.map((p) => ({ name: platformLabel(p), value: p as string, checked: true })),
-        })
-      : [];
-  const messagePlatforms =
-    messageChoices.length > 0
-      ? await checkbox({
-          message: 'Message replies on which platforms?',
-          choices: messageChoices.map((p) => ({ name: platformLabel(p), value: p as string, checked: true })),
-        })
-      : [];
-  const commentsEnabled = commentPlatforms.length > 0;
-  const messagesEnabled = messagePlatforms.length > 0;
-
-  const tone = state.answers.brand
-    ? `${state.answers.brand.voiceAdjectives.join(', ')} — never ${state.answers.brand.voiceNever}`
-    : 'match the brand pack';
-  const extraEscalate = await input({
-    message: `I always escalate ${DEFAULT_ESCALATION_TOPICS.join(', ')}. Any other topics that should always come to you? (comma-separated, blank for none)`,
-  });
-
-  const escalate = [
-    ...DEFAULT_ESCALATION_TOPICS,
-    ...extraEscalate.split(',').map((s) => s.trim()).filter(Boolean),
-  ];
-  state.answers.autoReplies = {
-    comments: { enabled: commentsEnabled, platforms: commentPlatforms, tone, escalate },
-    messages: { enabled: messagesEnabled, platforms: messagePlatforms, tone, escalate },
-  };
-  markStepDone(state, 'autoReplies');
-}
-
 async function stepPathway(state: InterviewState): Promise<void> {
   say('Last setup call: where do your automations live?');
   const automationTarget = await select({
@@ -575,19 +387,9 @@ async function stepFinish(
     automationTarget: pathway.automationTarget,
     timezone: pathway.timezone,
     profileId,
-    funnel: state.answers.funnel?.enabled
-      ? {
-          enabled: true,
-          keywords: state.answers.funnel.keywords ?? [],
-          matchMode: 'contains',
-          dmMessage: state.answers.funnel.dmMessage ?? '',
-          link: state.answers.funnel.link,
-          scope: state.answers.funnel.scope ?? 'account-wide',
-          accountIds: state.answers.funnel.accountIds ?? [],
-        }
-      : { enabled: false, keywords: [], matchMode: 'contains', dmMessage: '', scope: 'account-wide', accountIds: [] },
-    engagementAgent: state.answers.engagement,
-    autoReplies: state.answers.autoReplies,
+    // No automations are configured at onboarding — the user picks their
+    // set in the first chat, and the agent fills these in with sign-off.
+    funnel: { enabled: false, keywords: [], matchMode: 'contains', dmMessage: '', scope: 'account-wide', accountIds: [] },
     onboardedAt: new Date().toISOString(),
   };
   await saveConfig(paths.configJson, config);
@@ -603,81 +405,17 @@ async function stepFinish(
   }
   await mkdir(paths.contentLibraryDir, { recursive: true });
 
-  // Create the funnel now, with explicit sign-off on the exact copy.
-  if (state.answers.funnel?.enabled && state.answers.funnel.accountIds?.length) {
-    for (const accountId of state.answers.funnel.accountIds) {
-      const account = accounts.find((a) => a._id === accountId);
-      if (!account) continue;
-      const spec = {
-        platform: account.platform,
-        profileId: typeof account.profileId === 'string' ? account.profileId : account.profileId._id,
-        accountId,
-        name: `kairos-funnel-${account.platform}`,
-        keywords: state.answers.funnel.keywords ?? [],
-        dmMessage: state.answers.funnel.dmMessage ?? '',
-        link: state.answers.funnel.link,
-      };
-      say(describeFunnel(spec));
-      const approved = await confirm({
-        message: `Ship this funnel on ${platformLabel(account.platform)} @${account.username ?? '?'}? It DMs strangers automatically.`,
-        default: true,
-      });
-      if (!approved) {
-        say('Skipped — the config is saved in kairos/kairos.json; say the word and I\'ll turn it on.');
-        continue;
-      }
-      try {
-        await client.createCommentAutomation(account.platform, buildFunnelAutomation(spec));
-        say(`Funnel is live on ${platformLabel(account.platform)}.`);
-      } catch (error) {
-        say(`Couldn't create the funnel on ${platformLabel(account.platform)}: ${(error as Error).message}. Saved the config — we can retry from the chat.`);
-      }
-    }
-  }
-
-  // The cool touch: an animated preview of the comment-to-DM conversation,
-  // built from the persona + objective they just gave the agent.
-  if (state.answers.engagement) {
-    await showEngagementPreview({
-      keyword: state.answers.funnel?.keywords?.[0] ?? 'INFO',
-      dmMessage:
-        state.answers.funnel?.dmMessage ||
-        'Hey! Saw your comment — here\'s what you asked for.',
-      link: state.answers.funnel?.link ?? state.answers.brand?.products.find((p) => p.link)?.link,
-      persona: state.answers.engagement.persona,
-      objective: state.answers.engagement.objective,
-      objectiveDetail: state.answers.engagement.objectiveDetail,
-    });
-  }
-
-  // Offer the starter crons — the four pillars on schedules.
-  say('Starter automations — this is the end-state: all four pillars on autopilot. Pick what to turn on now (you can add the rest later):');
-  const chosen = await checkbox({
-    message: `Create on the ${pathway.automationTarget} pathway:`,
-    choices: STARTER_CRONS.map((cron) => ({
-      name: `${cron.name} — ${cron.description}`,
-      value: cron.name,
-      checked: cron.pillar === 'engagement',
-    })),
-  });
-  if (chosen.length > 0 && pathway.automationTarget === 'railway') {
-    say(`⚠ ${RAILWAY_SPEND_LIMIT_WARNING}`);
-  }
-  for (const name of chosen) {
-    const cron = STARTER_CRONS.find((c) => c.name === name)!;
-    const result = await createAutomation(paths.root, cron, pathway.automationTarget);
-    if (result.code === 0) {
-      say(`✓ ${cron.name} created. ${cron.description}`);
-    } else {
-      say(`✗ ${cron.name} failed: ${result.stderr.trim() || result.stdout.trim()}`);
-    }
-  }
-  if (chosen.length > 0) {
-    const listed = await verifyAutomations(paths.root);
-    if (listed.code === 0 && listed.stdout.trim()) {
-      say(`Verified — automations on record:\n${listed.stdout.trim()}`);
-    }
-  }
+  // Deliberately no automations here: everyone runs a different playbook,
+  // so nothing gets created on the user's behalf. The chat is where they
+  // pick, and the agent sets up only what they approve.
+  say(
+    `Setup's done — and on purpose, NOTHING is automated yet. Everyone runs a different playbook, so you pick what turns on. Once we're chatting, say the word and I'll set up any of these, one at a time, with your sign-off:
+  • Auto-replies to comments and DMs (I chat in a persona you define)
+  • Comments-to-DM funnels (keyword comment → automatic DM with your link)
+  • Scheduled content posting from your library
+  • Recurring analytics reports
+Want none of them? Also fine — everything works manually through chat too.`,
+  );
 
   // State of the socials: follower stats + recent posts, with an honest read.
   say('Here\'s where your socials actually stand:');
@@ -702,7 +440,7 @@ async function stepFinish(
 
   say(`Setup summary:\n${renderSetupSummary(state)}`);
   say(
-    "Honest read: the fastest lever from here is consistency — a full content-library/ and the daily-shortform cron beats any single viral swing. Drop 10+ clips into content-library/, and tell me \"schedule the week\". That's my suggested first move.",
+    "Honest read: the fastest lever from here is consistency — a full content-library/ and a daily posting automation beats any single viral swing. Drop 10+ clips into content-library/, then tell me \"schedule the week\" or pick your automations. That's my suggested first move.",
   );
 
   // The handoff: everything answered is now materialized in kairos/ — this

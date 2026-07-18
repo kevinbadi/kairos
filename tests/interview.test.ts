@@ -74,6 +74,14 @@ describe('interview persistence & resume', () => {
     expect(resumed.answers.brand?.products[0]?.link).toBe('https://coach.example/buy');
   });
 
+  it('goes straight from profiles to pathway — no automation setup steps in the form', () => {
+    expect(INTERVIEW_STEPS).not.toContain('funnel');
+    expect(INTERVIEW_STEPS).not.toContain('autoReplies');
+    const state = emptyState();
+    for (const step of ['brain', 'mode', 'key', 'brand', 'profiles'] as const) markStepDone(state, step);
+    expect(nextStep(state)).toBe('pathway');
+  });
+
   it('is complete only after every step, in the spec order', () => {
     const state = emptyState();
     for (const step of INTERVIEW_STEPS) {
@@ -134,34 +142,25 @@ describe('brand pack rendering', () => {
     expect(products[2]?.description).toContain('merch drop');
   });
 
-  it('the setup prompt makes the agent act on every questionnaire answer', () => {
+  it('the setup prompt hands off automations as a menu — it never pre-commits any', () => {
     const state: InterviewState = {
       completed: [],
       answers: {
         brand: { ...brand },
-        funnel: {
-          enabled: true,
-          keywords: ['GUIDE'],
-          dmMessage: 'here you go!',
-          link: 'https://shop.example/drop',
-          accountIds: ['acc1'],
-          scope: 'account-wide',
-        },
-        engagement: { persona: 'Maya — warm, punchy', objective: 'book-calls', objectiveDetail: 'https://cal.com/x' },
         pathway: { automationTarget: 'railway', timezone: 'America/Toronto' },
       },
     };
     const prompt = renderSetupPrompt(state);
     expect(prompt).toContain('kairos/kairos.json');
-    expect(prompt).toContain('"GUIDE"');
     expect(prompt).toContain('railway');
     expect(prompt).toContain('@rivalbrand');
-    expect(prompt).toMatch(/confirmation before it goes live/i);
+    expect(prompt).toMatch(/ZERO automations/i);
+    expect(prompt).toMatch(/ONLY what I approve/);
+    expect(prompt).toMatch(/none for now/i);
     expect(prompt).toMatch(/follower stats/i);
-    // funnel/engagement tasks disappear when not configured
-    const bare = renderSetupPrompt({ completed: [], answers: {} });
-    expect(bare).not.toContain('comment-to-DM funnel');
-    expect(bare).not.toContain('persona');
+    // no automation is described as already-decided
+    expect(prompt).not.toMatch(/create the comment-to-DM funnel/i);
+    expect(prompt).not.toMatch(/starter crons I still need/);
   });
 
   it('renders the profile map with account IDs', () => {

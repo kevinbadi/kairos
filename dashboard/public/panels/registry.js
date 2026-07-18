@@ -6,10 +6,11 @@
  * See "How to add your own panel" in the README for a worked example.
  */
 import overview from './overview.js';
+import understanding from './understanding.js';
 import automations from './automations.js';
 import brand from './brand.js';
 import training from './training.js';
 import logs from './logs.js';
 import chat from './chat.js';
 
-export const panels = [overview, automations, brand, training, logs, chat];
+export const panels = [overview, understanding, automations, brand, training, logs, chat];
