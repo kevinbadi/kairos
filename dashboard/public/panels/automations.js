@@ -1,66 +1,125 @@
 /**
- * Automations — every automation the agent runs: on/off state, the system
- * prompt driving it, and per-automation outcome stats from the activity
- * log. Live Creator OS API state is overlaid where it exists.
+ * Automations — every agentic workflow drawn n8n/Make-style: trigger →
+ * filter → action → outcome node chains, one card per flow, with origin
+ * (cloud = CreatorOS servers, local/railway = the agent's pathway),
+ * health, and live stats. Below the flows: a real-time executions feed
+ * merging cloud funnel logs with the agent's local activity log.
  */
 export default {
   id: 'automations',
   title: 'Automations',
-  subtitle: 'What the agent runs on its own — and whether it is performing',
+  subtitle: 'Every agentic workflow, cloud and local — and whether it’s operating well',
   icon: '⟳',
   route: '/automations',
 
   fetchData: ({ api }) => api('/api/automations'),
 
   render(root, data, ctx) {
-    const { h, card, badge, timeAgo, note } = ctx;
+    const { h, card, badge, dot, timeAgo, note, api } = ctx;
 
     if (!data.connected) {
       const hint = note('automations-connect',
-        'Automation state comes from your local config plus the CreatorOS API. Connect an account (npm start creatoros kairos) to see live state.');
+        'Cloud flows come from your CreatorOS account; connect one (npm start creatoros kairos) to see live funnel state and execution logs. Local flows render from this repo either way.');
       if (hint) root.append(hint);
     }
 
-    for (const a of data.automations) {
-      const stats = a.stats;
-      root.append(
-        h('div', { class: 'card-solid', style: 'margin-bottom:16px' },
-          h('div', { style: 'display:flex;align-items:center;gap:12px;flex-wrap:wrap' },
-            h('div', { class: 'card-title', style: 'margin:0;flex:1' }, a.name),
-            stats?.failed ? badge(`${stats.failed} failed`, 'failed') : null,
-            badge(a.enabled ? 'on' : 'off', a.enabled ? 'sent' : 'skipped'),
-          ),
-          h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin-top:10px' },
-            (a.platforms ?? []).map((p) => h('span', { class: 'chip chip-static' }, p)),
-            (a.keywords ?? []).map((k) => h('span', { class: 'chip chip-static chip-on' }, `"${k}"`)),
-          ),
-          a.systemPrompt
-            ? h('details', { style: 'margin-top:12px' },
-                h('summary', { style: 'cursor:pointer;color:var(--text-3);font-size:13px;font-weight:600' }, 'system prompt'),
-                h('pre', { style: 'margin-top:8px;padding:12px;border-radius:12px;background:var(--inset);border:1px solid var(--border);font-size:12.5px;white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;color:var(--text-2)' },
-                  a.systemPrompt))
-            : h('p', { style: 'margin-top:10px;color:var(--text-4);font-size:13px' }, 'No system prompt configured yet — set the persona during onboarding or ask Kai in the chat.'),
-          a.escalate?.length
-            ? h('p', { style: 'margin-top:10px;font-size:12.5px;color:var(--text-4)' }, `Always escalated to you: ${a.escalate.join(', ')}`)
-            : null,
-          h('p', { class: 'stat-sub num', style: 'margin-top:10px' },
-            stats
-              ? `last run ${timeAgo(stats.lastTs)} · ${stats.sent} sent · ${stats.skipped} skipped · ${stats.failed} failed`
-              : 'no runs observed in the activity log yet'),
-        ),
-      );
-    }
+    const healthBadge = (flow) => {
+      if (flow.health === 'failing') return badge(`failing · ${flow.stats.failed} failed`, 'failed');
+      if (flow.health === 'healthy') return badge('operating', 'sent');
+      if (flow.health === 'idle') return badge('armed · no runs yet', 'pending');
+      return badge('off', 'skipped');
+    };
+    const originBadge = (origin) =>
+      h('span', { class: `origin-badge${origin === 'cloud' ? ' cloud' : ''}` },
+        origin === 'cloud' ? '☁ cloud · CreatorOS' : origin === 'railway' ? '▲ railway' : '⌂ local');
 
-    /* ---- scheduled crons + roadmap, as collapsible reference cards ---- */
+    /* ---- flow cards ---- */
+    const flowCard = (flow) => {
+      const stateClass = flow.health === 'off' ? 'flow-off' : flow.health === 'failing' ? 'flow-failing' : flow.enabled ? 'flow-on' : '';
+      const graph = h('div', { class: 'flow-graph' });
+      flow.nodes.forEach((node, i) => {
+        if (i > 0) graph.append(h('div', { class: 'flow-link' }));
+        graph.append(
+          h('div', { class: `flow-node ${node.kind}` },
+            h('div', { class: 'fn-top' }, h('span', { class: 'fn-icon' }, node.icon), node.label),
+            node.sub ? h('div', { class: 'fn-sub', title: node.sub }, node.sub) : null,
+          ),
+        );
+      });
+      const s = flow.stats;
+      return h('div', { class: `card-solid flow-card ${stateClass}` },
+        h('div', { class: 'flow-head' },
+          dot(flow.health === 'failing' ? 'failed' : flow.health === 'healthy' ? 'sent' : 'skipped'),
+          h('span', { class: 'flow-name' }, flow.name),
+          h('div', { class: 'flow-meta' }, originBadge(flow.origin), healthBadge(flow)),
+        ),
+        graph,
+        h('div', { class: 'flow-stats num' },
+          s.lastTs
+            ? `last run ${timeAgo(s.lastTs)} (${s.lastOutcome}) · ${s.sent} sent · ${s.skipped} skipped · ${s.failed} failed`
+            : flow.enabled ? 'no executions recorded yet' : 'turned off — ask Kai in chat to arm it'),
+        flow.detail
+          ? h('details', { style: 'margin-top:8px' },
+              h('summary', { style: 'cursor:pointer;color:var(--text-4);font-size:12.5px' }, 'configuration'),
+              h('pre', { style: 'margin-top:6px;padding:10px;border-radius:10px;background:var(--inset);border:1px solid var(--border);font-size:12px;white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;color:var(--text-2)' }, flow.detail))
+          : null,
+      );
+    };
+
+    const flowsWrap = h('div', {});
+    const renderFlows = (flows) => {
+      flowsWrap.replaceChildren(
+        flows.length
+          ? h('div', {}, flows.map(flowCard))
+          : h('div', { class: 'card-solid' },
+              h('p', { style: 'color:var(--text-3)' },
+                'No automations exist yet. Ask Kai in the chat — "set up auto-replies" or "run a funnel on my latest post" — and the flows appear here as they go live.')),
+      );
+    };
+    renderFlows(data.flows);
+    root.append(flowsWrap);
+
+    /* ---- real-time executions feed ---- */
+    const runsBody = h('div', {});
+    const renderRuns = (runs) => {
+      runsBody.replaceChildren(
+        runs.length
+          ? h('div', {}, runs.map((r) => h('div', { class: 'feed-row', style: 'flex-wrap:wrap' },
+              dot(r.outcome),
+              h('span', { class: 'when' }, timeAgo(r.ts)),
+              h('span', { class: 'what' }, r.action),
+              h('span', { class: 'meta' }, [r.flow, r.platform, r.target].filter(Boolean).join(' · ')),
+              h('span', { class: `origin-badge${r.origin === 'cloud' ? ' cloud' : ''}`, style: 'font-size:9.5px' },
+                r.origin === 'cloud' ? '☁' : '⌂'),
+              badge(r.outcome, r.outcome),
+              r.error ? h('span', { class: 'meta', style: 'flex-basis:100%;padding-left:86px;color:var(--text-2)' }, r.error) : null,
+            )))
+          : h('p', { style: 'color:var(--text-3)' }, 'No executions yet — this feed fills in live as flows run (cloud funnel sends and local agent actions).'),
+      );
+    };
+    renderRuns(data.runs);
+    const runsCard = card('Executions — live, cloud + local', runsBody);
+    root.append(h('div', { style: 'margin-top:4px' }, runsCard));
+
+    // Poll while on screen: refresh flows (health can flip) and the feed.
+    const timer = setInterval(async () => {
+      if (!runsCard.isConnected) { clearInterval(timer); return; }
+      try {
+        const fresh = await api('/api/automations');
+        renderFlows(fresh.flows);
+        renderRuns(fresh.runs);
+      } catch { /* keep the last good view */ }
+    }, 8000);
+
+    /* ---- reference: raw cron list + catalog ---- */
     root.append(
-      h('details', { class: 'card-solid', style: 'margin-bottom:16px' },
-        h('summary', {}, 'Scheduled automations (cron)'),
+      h('details', { class: 'card-solid', style: 'margin-top:16px' },
+        h('summary', {}, 'Raw cron registry (creatoros automations:list)'),
         h('div', { class: 'details-body' },
           data.crons.output
             ? h('pre', { style: 'padding:12px;border-radius:12px;background:var(--inset);border:1px solid var(--border);font-size:12.5px;white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;color:var(--text-2)' }, data.crons.output)
-            : h('p', { style: 'color:var(--text-3)' }, 'No cron automations registered yet — ask Kai to create the starter crons.'),
-        )),
-      h('details', { class: 'card-solid' },
+            : h('p', { style: 'color:var(--text-3)' }, 'No cron automations registered yet.'))),
+      h('details', { class: 'card-solid', style: 'margin-top:12px' },
         h('summary', {}, 'Workflow catalog & roadmap'),
         h('div', { class: 'details-body' },
           data.catalog.map((w) => h('div', { class: 'feed-row' },
@@ -68,8 +127,7 @@ export default {
               w.status === 'live' ? 'sent' : w.status === 'available' ? 'skipped' : 'pending'),
             h('span', { class: 'what' }, w.name),
             h('span', { class: 'meta' }, w.description),
-          )),
-        )),
+          )))),
     );
   },
 };

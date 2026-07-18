@@ -111,6 +111,83 @@ describe('activity log', () => {
   });
 });
 
+describe('automation flows (n8n-style)', () => {
+  const CONFIG = {
+    version: 1 as const,
+    automationTarget: 'local' as const,
+    timezone: 'UTC',
+    engagementAgent: { persona: 'Maya — gym friend energy', objective: 'book-calls' as const },
+    funnel: {
+      enabled: true, keywords: ['GUIDE'], matchMode: 'contains' as const,
+      dmMessage: 'Here is the guide!', link: 'https://x.co/guide', scope: 'account-wide' as const, accountIds: ['a1'],
+    },
+    autoReplies: {
+      comments: { enabled: true, platforms: ['instagram'], tone: 'warm', escalate: ['refunds'] },
+      messages: { enabled: false, platforms: [], tone: 'warm', escalate: ['refunds'] },
+    },
+  };
+  const entry = (over: Partial<ActivityEntry>): ActivityEntry => ({
+    ts: '2026-07-18T10:00:00Z', workflow: 'chat', action: 'reply_to_comment', outcome: 'sent', ...over,
+  });
+
+  it('engagement flows draw trigger → persona → escalation → outcome', async () => {
+    const { engagementFlows } = await import('../src/dashboard/flows.js');
+    const [comments, messages] = engagementFlows(CONFIG, [entry({}), entry({ action: 'send_message', outcome: 'failed', error: 'x' })]);
+    expect(comments?.nodes.map((n) => n.kind)).toEqual(['trigger', 'action', 'filter', 'outcome']);
+    expect(comments?.nodes[1]?.sub).toContain('Maya');
+    expect(comments?.health).toBe('healthy');
+    expect(messages?.enabled).toBe(false);
+    expect(messages?.health).toBe('off'); // disabled wins even with failures logged
+  });
+
+  it('funnel flows prefer LIVE CreatorOS automations over local config', async () => {
+    const { funnelFlows, EMPTY_STATS } = await import('../src/dashboard/flows.js');
+    const live = [{ id: 'f1', name: 'launch funnel', platform: 'instagram', keywords: ['LINK'], isActive: true }];
+    const stats = new Map([['f1', { ...EMPTY_STATS, lastTs: '2026-07-18T09:00:00Z', lastOutcome: 'sent', sent: 4 }]]);
+    const flows = funnelFlows(CONFIG, live, stats);
+    expect(flows).toHaveLength(1);
+    expect(flows[0]?.origin).toBe('cloud');
+    expect(flows[0]?.name).toBe('launch funnel');
+    expect(flows[0]?.health).toBe('healthy');
+    expect(flows[0]?.nodes[0]?.sub).toContain('"LINK"');
+    // fallback to config when the API returns nothing
+    const fallback = funnelFlows(CONFIG, [], new Map());
+    expect(fallback[0]?.enabled).toBe(true);
+    expect(fallback[0]?.health).toBe('idle');
+    expect(fallback[0]?.nodes[0]?.sub).toContain('"GUIDE"');
+  });
+
+  it('cron flows appear only when the registry lists them', async () => {
+    const { cronFlows } = await import('../src/dashboard/flows.js');
+    const flows = cronFlows('registered: daily-shortform, weekly-analytics', CONFIG, [
+      entry({ workflow: 'daily-shortform', action: 'create_post' }),
+    ]);
+    expect(flows.map((f) => f.id).sort()).toEqual(['daily-shortform', 'weekly-analytics']);
+    expect(flows.find((f) => f.id === 'daily-shortform')?.health).toBe('healthy');
+    expect(flows.find((f) => f.id === 'weekly-analytics')?.health).toBe('idle');
+    expect(cronFlows('', CONFIG, [])).toHaveLength(0);
+  });
+
+  it('health: failing when the last run failed or failures outweigh sends', async () => {
+    const { flowHealth, statsFrom } = await import('../src/dashboard/flows.js');
+    const failing = statsFrom([entry({ outcome: 'failed', error: 'boom' }), entry({ ts: '2026-07-17T10:00:00Z' })], () => true);
+    expect(flowHealth(true, failing)).toBe('failing');
+    const healthy = statsFrom([entry({}), entry({ ts: '2026-07-17T10:00:00Z', outcome: 'failed' })], () => true);
+    expect(flowHealth(true, healthy)).toBe('healthy');
+    expect(flowHealth(false, healthy)).toBe('off');
+  });
+
+  it('merges cloud and local runs newest-first', async () => {
+    const { mergeRuns } = await import('../src/dashboard/flows.js');
+    const merged = mergeRuns(
+      [{ ts: '2026-07-18T10:00:00Z', flow: 'chat', origin: 'local', action: 'reply_to_comment', outcome: 'sent' }],
+      [{ ts: '2026-07-18T11:00:00Z', flow: 'launch funnel', origin: 'cloud', action: 'funnel DM', outcome: 'sent' }],
+    );
+    expect(merged[0]?.origin).toBe('cloud');
+    expect(merged[1]?.origin).toBe('local');
+  });
+});
+
 describe('agent understanding', () => {
   const BRAND_MD = `# Brand Pack
 

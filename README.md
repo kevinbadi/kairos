@@ -50,7 +50,7 @@ kai dashboard        # same thing, from anywhere (after `npm link`)
 
 A local web dashboard for monitoring what your agent is *actually doing* — and verifying it's working. Zero external services: it reads this repo's files, the agent's structured activity log (`logs/activity.jsonl`, one JSON line per action the agent takes), and the CreatorOS API with your already-configured credentials. Missing credentials never crash it — you get a friendly connect state instead.
 
-**Pages:** Overview (health strip, reply/DM/post counters, a GitHub-style year heatmap of agent activity, live feed) · Agent (full transparency into the agent's understanding: persona, objective, KPIs, what the account sells, comment/DM rules, and the literal system prompt it runs on) · Automations (every automation, its on/off state, system prompt, and sent/skipped/failed stats) · Brand (`kairos/BRAND.md` rendered, edit-in-place) · Training (every workflow playbook with last-used-by-the-agent info, edit-in-place) · Logs (full filterable feed with raw JSON + real error payloads) · Chat (the same Kai as the terminal, streaming in the browser). Dark and light themes, persisted.
+**Pages:** Overview (health strip, reply/DM/post counters, a GitHub-style year heatmap of agent activity, live feed) · Agent (full transparency into the agent's understanding: persona, objective, KPIs, what the account sells, comment/DM rules, and the literal system prompt it runs on) · Automations (every agentic workflow drawn n8n-style as trigger → action → outcome node chains — cloud funnels straight from the CreatorOS API with their real execution logs, local/Railway crons and auto-replies from the agent's log — each with an operating/armed/failing health badge and a live merged executions feed) · Brand (`kairos/BRAND.md` rendered, edit-in-place) · Training (every workflow playbook with last-used-by-the-agent info, edit-in-place) · Logs (full filterable feed with raw JSON + real error payloads) · Chat (the same Kai as the terminal, streaming in the browser). Dark and light themes, persisted.
 
 ### The API under it
 
@@ -60,7 +60,7 @@ Every panel is fed by plain local JSON endpoints — build your own UI against t
 |---|---|
 | `GET /api/health` | credentials valid?, config files loaded, brain status, last action, staleness warning |
 | `GET /api/activity` | log entries + counters + heatmap buckets (`?workflow=&platform=&outcome=&limit=`) |
-| `GET /api/automations` | each automation's state, prompt, and log-derived stats; cron list; catalog |
+| `GET /api/automations` | flows (n8n-style node chains, cloud + local, health per flow) + merged live executions |
 | `GET /api/understanding` | the agent's mind: persona, objective + KPIs, offers, engagement rules, system prompt |
 | `GET /api/brand` · `PUT /api/brand` | the brand file (`{path, mtime, content}`) / save edits to disk |
 | `GET /api/workflows` · `PUT /api/workflows` | training files + per-file agent usage / save (`{id, content}`) |

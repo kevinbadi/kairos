@@ -306,6 +306,56 @@ details.card > .details-body, details.card-solid > .details-body { padding: 0 20
 .chat-tool.result { margin-left: 18px; }
 .chat-input-row { display: flex; gap: 10px; margin-top: 14px; }
 
+/* --------------------------------------------------------------------------
+   Flow graphs (Automations) — n8n/Make-style node chains
+   -------------------------------------------------------------------------- */
+
+.flow-card { margin-bottom: 16px; }
+.flow-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.flow-head .flow-name { font-weight: 800; font-size: 15px; letter-spacing: -0.01em; }
+.flow-head .flow-meta { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.origin-badge {
+  font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border-hi); color: var(--text-3);
+  background: var(--surface);
+}
+.origin-badge.cloud { color: var(--accent); border-color: var(--accent-border); background: var(--accent-soft); }
+
+.flow-graph { display: flex; align-items: stretch; padding: 16px 2px 6px; overflow-x: auto; }
+.flow-node {
+  flex: 0 0 auto; min-width: 148px; max-width: 210px;
+  background: var(--inset); border: 1px solid var(--border-hi); border-radius: 14px;
+  padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; justify-content: center;
+}
+.flow-node .fn-top { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; color: var(--text-2); }
+.flow-node .fn-icon { color: var(--text-3); }
+.flow-node .fn-sub { font-size: 11.5px; color: var(--text-4); overflow: hidden; text-overflow: ellipsis; }
+.flow-node.trigger { border-color: var(--accent-border); }
+.flow-node.trigger .fn-icon { color: var(--accent); }
+.flow-node.outcome { border-style: dashed; }
+
+/* Connector between nodes: dashed line + arrowhead; animates when live */
+.flow-link {
+  flex: 0 0 34px; align-self: center; position: relative; height: 2px; margin: 0 2px;
+  background-image: linear-gradient(90deg, var(--border-hi) 60%, transparent 60%);
+  background-size: 8px 2px; background-repeat: repeat-x;
+}
+.flow-link::after {
+  content: ''; position: absolute; right: -1px; top: -3px;
+  border-left: 6px solid var(--border-hi); border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+}
+.flow-on .flow-link {
+  background-image: linear-gradient(90deg, var(--accent) 60%, transparent 60%);
+  animation: flowdash 0.8s linear infinite;
+}
+.flow-on .flow-link::after { border-left-color: var(--accent); }
+@keyframes flowdash { to { background-position: 8px 0; } }
+.flow-off .flow-node { opacity: 0.55; }
+.flow-failing .flow-node { border-color: var(--border-hi); }
+
+.flow-stats { font-size: 12.5px; color: var(--text-4); margin-top: 4px; }
+.flow-error { font-size: 12.5px; color: var(--text-2); margin-top: 6px; font-family: ui-monospace, Menlo, monospace; word-break: break-word; }
+
 /* Log filters */
 .filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
 .filters select {

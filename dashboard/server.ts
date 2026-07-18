@@ -38,6 +38,15 @@ import { buildToolServer } from '../src/agent/tools.js';
 import { verifyAutomations } from '../src/automations/crons.js';
 import { workflowCatalog } from '../src/dashboard/workflows.js';
 import { parseBrandMd, deriveKpis, describeObjective, MISSION_PILLARS } from '../src/dashboard/understanding.js';
+import {
+  engagementFlows,
+  funnelFlows,
+  cronFlows,
+  mergeRuns,
+  type FlowRun,
+  type FlowStats,
+  type LiveFunnel,
+} from '../src/dashboard/flows.js';
 import { readActivity, summarizeActivity } from '../src/util/activityLog.js';
 import { kairosPaths } from '../src/paths.js';
 import { sanitize } from '../src/util/sanitize.js';
@@ -171,62 +180,123 @@ async function healthPayload(session: Session): Promise<unknown> {
 }
 
 /* ------------------------------------------------------------------ */
-/* /api/automations — live state + local config + log-derived stats    */
+/* /api/automations — every flow, n8n-style, cloud + local, with a     */
+/* merged real-time executions feed. The panel polls this endpoint, so */
+/* the expensive pieces (CLI spawn, funnel-log fetches) are cached.    */
 /* ------------------------------------------------------------------ */
+
+let cronListCache: { at: number; output: string; ok: boolean } | null = null;
+let cloudCache: { at: number; funnels: LiveFunnel[]; statsById: Map<string, FlowStats>; runs: FlowRun[] } | null = null;
+
+/** The CreatorOS API's list/log shapes are parsed defensively — a field
+ * rename upstream degrades to "no data", never to a crash. */
+function asArray(body: unknown): Record<string, unknown>[] {
+  if (Array.isArray(body)) return body as Record<string, unknown>[];
+  if (body && typeof body === 'object') {
+    for (const key of ['automations', 'logs', 'data', 'items', 'results']) {
+      const value = (body as Record<string, unknown>)[key];
+      if (Array.isArray(value)) return value as Record<string, unknown>[];
+    }
+  }
+  return [];
+}
+
+const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+
+async function fetchCloudState(session: Session): Promise<NonNullable<typeof cloudCache>> {
+  if (cloudCache && Date.now() - cloudCache.at < 30_000) return cloudCache;
+  const funnels: LiveFunnel[] = [];
+  const statsById = new Map<string, FlowStats>();
+  const runs: FlowRun[] = [];
+  if (session.client) {
+    try {
+      const raw = asArray(await session.client.listCommentAutomations(session.config?.profileId));
+      for (const item of raw.slice(0, 5)) {
+        const id = str(item._id) ?? str(item.id);
+        if (!id) continue;
+        const funnel: LiveFunnel = {
+          id,
+          name: str(item.name) ?? 'Comments → DM funnel',
+          platform: str(item.platform),
+          keywords: Array.isArray(item.keywords) ? (item.keywords as string[]) : [],
+          isActive: item.isActive !== false,
+        };
+        funnels.push(funnel);
+        // The funnel's own execution log — real cloud-side runs.
+        try {
+          const logs = asArray(await session.client.commentAutomationLogs(id, { limit: 30 }));
+          const stats: FlowStats = { lastTs: null, lastOutcome: null, sent: 0, skipped: 0, failed: 0 };
+          for (const log of logs) {
+            const outcome = str(log.status) ?? 'sent';
+            const ts = str(log.createdAt) ?? str(log.timestamp) ?? str(log.sentAt);
+            if (!stats.lastTs && ts) {
+              stats.lastTs = ts;
+              stats.lastOutcome = outcome;
+            }
+            if (outcome === 'sent') stats.sent++;
+            else if (outcome === 'skipped') stats.skipped++;
+            else if (outcome === 'failed') stats.failed++;
+            if (ts) {
+              runs.push({
+                ts,
+                flow: funnel.name,
+                origin: 'cloud',
+                action: 'funnel DM',
+                outcome,
+                platform: funnel.platform,
+                target: str(log.commentId) ?? str(log.username),
+                error: str(log.error) ?? str(log.reason),
+              });
+            }
+          }
+          statsById.set(id, stats);
+        } catch {
+          // logs can be gated — the flow still renders from the list state
+        }
+      }
+    } catch {
+      // no cloud automations reachable — local flows still render
+    }
+  }
+  cloudCache = { at: Date.now(), funnels, statsById, runs };
+  return cloudCache;
+}
 
 async function automationsPayload(session: Session): Promise<unknown> {
   const config = session.config;
-  const summary = summarizeActivity(await readActivity(session.workspaceRoot));
-  const crons = await verifyAutomations(session.workspaceRoot);
-  let liveFunnels: unknown = null;
-  if (session.client) {
-    try {
-      liveFunnels = await session.client.listCommentAutomations(config?.profileId);
-    } catch (error) {
-      liveFunnels = { error: (error as Error).message };
-    }
+  const entries = await readActivity(session.workspaceRoot);
+
+  if (!cronListCache || Date.now() - cronListCache.at > 30_000) {
+    const result = await verifyAutomations(session.workspaceRoot);
+    cronListCache = { at: Date.now(), output: result.stdout.trim() || result.stderr.trim(), ok: result.code === 0 };
   }
-  const stats = (workflow: string) => summary.perWorkflow.find((w) => w.workflow === workflow) ?? null;
-  const tone = config?.autoReplies?.comments.tone ?? config?.autoReplies?.messages.tone ?? null;
-  const persona = config?.engagementAgent
-    ? `${config.engagementAgent.persona}\n\nObjective: ${config.engagementAgent.objective}${config.engagementAgent.objectiveDetail ? ` — ${config.engagementAgent.objectiveDetail}` : ''}`
-    : null;
+  const cloud = await fetchCloudState(session);
+
+  const flows = [
+    ...funnelFlows(config, cloud.funnels, cloud.statsById),
+    ...engagementFlows(config, entries),
+    ...cronFlows(cronListCache.ok ? cronListCache.output : '', config, entries),
+  ];
+
+  // Local runs come from the agent's activity log (workflows, not chat-only
+  // reads); cloud runs come from the funnels' own execution logs.
+  const localRuns: FlowRun[] = entries.slice(0, 60).map((e) => ({
+    ts: e.ts,
+    flow: e.workflow,
+    origin: (config?.automationTarget === 'railway' ? 'railway' : 'local') as FlowRun['origin'],
+    action: e.action,
+    outcome: e.outcome,
+    platform: e.platform,
+    target: e.target,
+    error: e.error,
+  }));
 
   return {
     connected: session.client !== null,
-    automations: [
-      {
-        id: 'reply-to-comments',
-        name: 'Reply to comments',
-        enabled: Boolean(config?.autoReplies?.comments.enabled),
-        platforms: config?.autoReplies?.comments.platforms ?? [],
-        systemPrompt: persona ?? tone,
-        escalate: config?.autoReplies?.comments.escalate ?? [],
-        stats: stats('respond-to-comments') ?? stats('engagement-sweep'),
-      },
-      {
-        id: 'reply-to-messages',
-        name: 'Reply to messages (DMs)',
-        enabled: Boolean(config?.autoReplies?.messages.enabled),
-        platforms: config?.autoReplies?.messages.platforms ?? [],
-        systemPrompt: persona ?? tone,
-        escalate: config?.autoReplies?.messages.escalate ?? [],
-        stats: stats('respond-to-comments') ?? stats('engagement-sweep'),
-      },
-      {
-        id: 'comment-dm-funnel',
-        name: 'Comments → DM funnel',
-        enabled: Boolean(config?.funnel?.enabled),
-        keywords: config?.funnel?.keywords ?? [],
-        systemPrompt: config?.funnel?.dmMessage || null,
-        link: config?.funnel?.link ?? null,
-        stats: stats('funnel'),
-      },
-    ],
-    crons: { ok: crons.code === 0, output: crons.stdout.trim() || crons.stderr.trim() },
-    catalog: workflowCatalog(crons.code === 0 ? crons.stdout : ''),
-    liveFunnels,
-    perWorkflow: summary.perWorkflow,
+    flows,
+    runs: mergeRuns(localRuns, cloud.runs),
+    crons: { ok: cronListCache.ok, output: cronListCache.output },
+    catalog: workflowCatalog(cronListCache.ok ? cronListCache.output : ''),
   };
 }
 
