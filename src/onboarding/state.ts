@@ -61,6 +61,8 @@ export interface InterviewState {
       workerToken?: string;
       /** Railway service id for dashboard deploy-status checks. */
       railwayServiceId?: string;
+      /** A Railway API token was saved to ~/.kairos — the agent can provision. */
+      railwayTokenSaved?: boolean;
     };
   };
 }

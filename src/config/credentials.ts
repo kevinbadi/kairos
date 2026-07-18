@@ -29,6 +29,25 @@ export interface StoredCredentials {
   keys?: Array<{ label: string; apiKey: string }>;
   /** API key for a custom (Anthropic-compatible) brain. */
   aiApiKey?: string;
+  /** Railway account API token — lets the agent provision the worker. */
+  railwayApiToken?: string;
+}
+
+/** Railway account token: RAILWAY_API_TOKEN env wins, then the saved one. */
+export async function resolveRailwayToken(): Promise<string | null> {
+  const fromEnv = process.env.RAILWAY_API_TOKEN?.trim();
+  if (fromEnv) return fromEnv;
+  if (!existsSync(CREDENTIALS_PATH)) return null;
+  try {
+    const parsed = JSON.parse(await readFile(CREDENTIALS_PATH, 'utf8')) as StoredCredentials;
+    return parsed.railwayApiToken ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveRailwayToken(railwayApiToken: string): Promise<void> {
+  await saveCredentials({ railwayApiToken } as unknown as StoredCredentials);
 }
 
 /** Custom-brain API key: AI_API_KEY env wins, then the saved one. */

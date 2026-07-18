@@ -180,7 +180,9 @@ export function renderSetupPrompt(state: InterviewState): string {
   ];
   if (pathway?.automationTarget === 'railway' && !pathway.workerUrl) {
     tasks.push(
-      'My Railway worker is not deployed yet. Walk me through kairos/RAILWAY.md step by step when I am ready, and once I give you the service URL, save it to kairos/kairos.json under worker.url.',
+      pathway.railwayTokenSaved
+        ? 'Provision my Railway worker for me — my Railway API token is saved in ~/.kairos. Follow the provision-railway skill: railway init, upload this workspace with railway up, set every variable (you will need to ask me for an AI credential for the cloud worker, and I must confirm my Anthropic spend limit is set BEFORE you deploy), generate the domain, save worker.url + railway.serviceId to kairos/kairos.json, and verify /health. Never print any secret.'
+        : 'My Railway worker is not deployed yet. Walk me through kairos/RAILWAY.md step by step when I am ready — or if I give you a Railway API token, provision it yourself via the provision-railway skill. Once live, save the URL to kairos/kairos.json under worker.url.',
     );
   }
   tasks.push(

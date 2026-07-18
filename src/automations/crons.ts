@@ -140,7 +140,7 @@ export async function createAutomation(
       });
       return {
         code: 0,
-        stdout: `${cron.name} saved to kairos/automations.json — the Railway worker picks it up within 30 seconds (no redeploy needed).`,
+        stdout: `${cron.name} saved to kairos/automations.json. A worker running against this workspace picks it up within 30 seconds; a DEPLOYED Railway worker needs a sync — run \`railway up --detach\` (or ask me to) so the change ships.`,
         stderr: '',
       };
     } catch (error) {

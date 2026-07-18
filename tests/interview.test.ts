@@ -166,18 +166,29 @@ describe('brand pack rendering', () => {
     expect(prompt).not.toMatch(/starter crons I still need/);
   });
 
-  it('a railway pathway without a deployed worker adds the deploy walkthrough task', () => {
-    const withoutWorker = renderSetupPrompt({
+  it('a railway pathway without a deployed worker adds the right deploy task', () => {
+    // Token saved → the AGENT provisions; the user never touches Railway.
+    const withToken = renderSetupPrompt({
+      completed: [],
+      answers: { pathway: { automationTarget: 'railway', timezone: 'America/Toronto', workerToken: 'tok', railwayTokenSaved: true } },
+    });
+    expect(withToken).toContain('Provision my Railway worker for me');
+    expect(withToken).toContain('provision-railway');
+    expect(withToken).toContain('spend limit');
+    // No token → manual walkthrough, with the token shortcut offered.
+    const withoutToken = renderSetupPrompt({
       completed: [],
       answers: { pathway: { automationTarget: 'railway', timezone: 'America/Toronto', workerToken: 'tok' } },
     });
-    expect(withoutWorker).toContain('kairos/RAILWAY.md');
-    expect(withoutWorker).toContain('worker.url');
+    expect(withoutToken).toContain('kairos/RAILWAY.md');
+    expect(withoutToken).toContain('worker.url');
+    // Worker already live → no deploy task at all.
     const withWorker = renderSetupPrompt({
       completed: [],
       answers: { pathway: { automationTarget: 'railway', timezone: 'America/Toronto', workerUrl: 'https://w.up.railway.app' } },
     });
     expect(withWorker).not.toContain('kairos/RAILWAY.md');
+    expect(withWorker).not.toContain('Provision my Railway worker');
   });
 
   it('describes a live worker in one human line', () => {

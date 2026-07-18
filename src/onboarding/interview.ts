@@ -16,7 +16,7 @@ import { platformLabel } from '../client/platformMatrix.js';
 import type { SocialAccount } from '../client/types.js';
 import { maskKey } from '../util/mask.js';
 import { kairosPaths, type KairosPaths } from '../paths.js';
-import { resolveApiKey, saveApiKey, saveCredentials } from '../config/credentials.js';
+import { resolveApiKey, saveApiKey, saveCredentials, saveRailwayToken } from '../config/credentials.js';
 import { saveConfig, type KairosConfig } from '../config/kairosConfig.js';
 import {
   isStepDone,
@@ -383,15 +383,26 @@ async function stepPathway(state: InterviewState, paths: KairosPaths): Promise<v
     return;
   }
 
-  // Railway: initialize as much as possible on the user's behalf. Already
-  // deployed → verify the worker LIVE right here and report its schedule.
-  // Not yet → generate the auth token, write the guide, explain the loop.
+  // Railway: the user's only job is creating the account — with their API
+  // token the AGENT provisions the whole environment (project, upload,
+  // variables, domain) in the first chat. Already deployed → verify LIVE
+  // right here. No token, no deploy → guide fallback.
   say(
-    `The worker needs two credentials on Railway: your CreatorOS key, and an AI credential — ANTHROPIC_API_KEY, or a token from \`claude setup-token\` (CLAUDE_CODE_OAUTH_TOKEN) to stay on your Claude plan.\n⚠ ${RAILWAY_SPEND_LIMIT_WARNING}`,
+    `You don't set up Railway yourself — I do. Create the account (railway.app, Hobby plan), grab an API token at railway.app/account/tokens, and paste it here. In our first chat I'll build the whole environment: project, this workspace uploaded, every variable set, public domain generated, health-checked.\n⚠ ${RAILWAY_SPEND_LIMIT_WARNING}`,
   );
+  const railwayApiToken = (
+    await password({
+      message: 'Railway API token (blank — skip, you get a manual deploy guide instead):',
+      mask: '*',
+    })
+  ).trim();
+  if (railwayApiToken) {
+    await saveRailwayToken(railwayApiToken);
+    say('Token saved securely to ~/.kairos (never into this repo).');
+  }
   const workerUrl = (
     await input({
-      message: 'Worker URL, if the Railway service is already deployed (blank — not yet, set me up for it):',
+      message: 'Worker URL, if a Railway worker is already deployed (blank — not yet):',
     })
   ).trim();
 
@@ -417,17 +428,23 @@ async function stepPathway(state: InterviewState, paths: KairosPaths): Promise<v
     workerToken = randomBytes(24).toString('hex');
   }
 
-  const railwayServiceId = (
-    await input({
-      message: 'Railway service ID, for live deploy status on the dashboard (blank to skip):',
-    })
-  ).trim();
+  const railwayServiceId = railwayApiToken || workerUrl
+    ? ''
+    : (
+        await input({
+          message: 'Railway service ID, for live deploy status on the dashboard (blank to skip):',
+        })
+      ).trim();
 
   if (!workerUrl) {
     await mkdir(paths.kairosDir, { recursive: true });
     await writeFile(join(paths.kairosDir, 'RAILWAY.md'), renderRailwayGuide({ timezone, workerToken: workerToken! }), 'utf8');
     say(
-      `Everything I can do without you is done: your worker auth token is generated and the full deploy guide is at kairos/RAILWAY.md — every value pre-filled, ~10 minutes of copy-paste on railway.app.
+      railwayApiToken
+        ? `Everything on my side is staged: worker auth token generated, deploy plan written to kairos/RAILWAY.md as the reference. In our first chat, say "build my Railway worker" and I'll provision it end to end. Two things only you can do, when we get there: hand me an AI credential for the cloud worker (ANTHROPIC_API_KEY, or run \`claude setup-token\` to stay on your Claude plan) and set that Anthropic spend limit first.
+
+Once it's live: automations you pick in chat land in kairos/automations.json, and I ship changes to the worker with a quick sync each time — you never touch Railway again.`
+        : `Everything I can do without you is done: your worker auth token is generated and the full deploy guide is at kairos/RAILWAY.md — every value pre-filled, ~10 minutes of copy-paste on railway.app. (Shortcut: paste a Railway API token in chat any time and I'll do the whole deploy for you.)
 
 How it works once deployed: the worker re-reads kairos/automations.json every 30 seconds, so automations you pick in our chat start running the moment it's live — no restarts, no redeploys, ever. Its /health endpoint (and the dashboard's Automations page) shows the loaded schedule with next-run times. Want a preview first? \`npm run worker\` runs the same thing right here on this machine.`,
     );
@@ -439,6 +456,7 @@ How it works once deployed: the worker re-reads kairos/automations.json every 30
     workerToken,
     workerUrl: workerUrl || undefined,
     railwayServiceId: railwayServiceId || undefined,
+    railwayTokenSaved: Boolean(railwayApiToken),
   };
   markStepDone(state, 'pathway');
 }
@@ -494,7 +512,9 @@ Want none of them? Also fine — everything works manually through chat too.`,
   );
   if (pathway.automationTarget === 'railway' && !pathway.workerUrl) {
     say(
-      'One infrastructure step remains on your side: deploy the worker with kairos/RAILWAY.md (10 minutes, every value pre-filled). Automations you pick in chat are saved either way and start running the moment it goes live.',
+      pathway.railwayTokenSaved
+        ? 'Infrastructure: your Railway token is saved, so the deploy is MY job — first thing in chat, say "build my Railway worker" and I\'ll provision the whole environment. Automations you pick are saved either way and start the moment it\'s live.'
+        : 'One infrastructure step remains on your side: deploy the worker with kairos/RAILWAY.md (10 minutes, every value pre-filled) — or hand me a Railway API token in chat and I\'ll do it for you. Automations you pick are saved either way and start the moment it goes live.',
     );
   }
 
