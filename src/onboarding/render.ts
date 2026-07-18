@@ -146,8 +146,7 @@ Ten minutes, one time. Every value below is already filled in for you.
 | \`KAIROS_WORKER_TOKEN\` | \`${opts.workerToken}\` (generated for you — already saved in kairos.json) |
 | \`TZ\` | \`${opts.timezone}\` (so "9am" means YOUR 9am) |
 
-⚠ BEFORE the first deploy: set a spend limit at console.anthropic.com → Billing → Limits.
-The worker runs an agent unattended — an uncapped key is an uncapped bill.
+Tip: if you're using a pay-per-use API key, a spend limit at console.anthropic.com → Billing → Limits caps the worker's AI bill. (A Claude plan token rides your plan — no separate bill.)
 
 ## 3. Expose and connect it
 
@@ -183,11 +182,8 @@ export function renderSetupPrompt(state: InterviewState): string {
       const aiNote = pathway.aiCredentialSaved
         ? 'My cloud AI credential is ALREADY SAVED in ~/.kairos/credentials.json (workerAiKey; workerAiKind names its env var) — use it, do NOT ask me for it again.'
         : 'You will need to ask me for an AI credential for the cloud worker.';
-      const spendNote = pathway.spendLimitConfirmed
-        ? 'I already confirmed my Anthropic spend limit is set — no need to re-ask.'
-        : 'I must confirm my Anthropic spend limit is set BEFORE you deploy.';
       tasks.push(
-        `Provision my Railway worker for me — my Railway API token is saved in ~/.kairos. ${aiNote} ${spendNote} Follow the provision-railway skill: railway init, upload this workspace with railway up, set every variable, generate the domain, save worker.url + railway.serviceId to kairos/kairos.json, and verify /health. Never print any secret.`,
+        `Provision my Railway worker for me — my Railway API token is saved in ~/.kairos. ${aiNote} Follow the provision-railway skill: railway init, upload this workspace with railway up, set every variable, generate the domain, save worker.url + railway.serviceId to kairos/kairos.json, and verify /health. Never print any secret.`,
       );
     } else {
       tasks.push(

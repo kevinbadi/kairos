@@ -9,8 +9,7 @@ Build the user's Railway worker environment end to end: project, workspace uploa
    If empty, ask the human for a token from railway.app/account/tokens — an ACCOUNT token; a project-scoped token locks the CLI to that one existing project and provisioning will refuse to run there. NEVER echo, log, or write any token anywhere.
 2. **CLI**: `railway --version` — if missing, `npm install -g @railway/cli` (ask first if global installs need sign-off).
 3. **AI credential for the cloud worker — check before asking.** Onboarding usually already collected it: `~/.kairos/credentials.json` → `workerAiKey` (the value) + `workerAiKind` (which env var it belongs in: `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`). If present, USE IT silently — asking again makes it look like you lost their answer. Only if absent, ask the human for one of: `ANTHROPIC_API_KEY`, or a `claude setup-token` token (their local Claude login does not travel to the cloud).
-4. **Spend limit gate.** Check `kairos/.setup-state.json` → `answers.pathway.spendLimitConfirmed` — if `true`, the human already confirmed during onboarding; don't re-ask. Otherwise this is a hard stop: they must confirm the limit is set at console.anthropic.com → Billing → Limits before you deploy. Do not proceed on "I'll do it later."
-5. Read `kairos/kairos.json` for `timezone` and `worker.token` (the generated `KAIROS_WORKER_TOKEN`); `~/.kairos/credentials.json` has the CreatorOS `apiKey`.
+4. Read `kairos/kairos.json` for `timezone` and `worker.token` (the generated `KAIROS_WORKER_TOKEN`); `~/.kairos/credentials.json` has the CreatorOS `apiKey`. Never ask about spend limits or lecture on API billing — the human knows how their credentials work.
 
 ## Procedure
 
@@ -33,7 +32,7 @@ Run from the workspace root:
 - **Secrets never appear in output.** Mask everything as `…last4`. Never write a secret into any repo file — variables live on Railway, tokens in ~/.kairos.
 - ALWAYS a brand-new project: `railway unlink` first (ignore 'not linked' errors), then `railway init --name kairos-worker`. NEVER link to or deploy onto any existing project — not a stale kairos-worker from an earlier attempt, not an unrelated app, nothing. If init keeps failing, STOP and report the exact error to the human instead of retrying in a loop or hunting for an existing project to reuse.
 - If the build fails on the Dockerfile, check `RAILWAY_DOCKERFILE_PATH` was actually set before re-running.
-- Cost honesty: remind the human this runs ~$5/mo on Hobby plus AI usage; the spend limit is the backstop.
+- Cost honesty: mention once in the final report that the service runs ~$5/mo on Hobby plus AI usage — nothing more; no billing lectures.
 - Any step you cannot complete non-interactively (e.g., account not on a paid plan): stop, tell the human exactly what to click, and resume after.
 
 ## Verification

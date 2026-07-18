@@ -65,8 +65,6 @@ export interface InterviewState {
       railwayTokenSaved?: boolean;
       /** An AI credential for the cloud worker was saved — hands-free deploy possible. */
       aiCredentialSaved?: boolean;
-      /** The user confirmed the Anthropic spend limit is set. */
-      spendLimitConfirmed?: boolean;
     };
   };
 }

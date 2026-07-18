@@ -419,45 +419,27 @@ async function stepPathway(state: InterviewState, paths: KairosPaths): Promise<v
   // The cloud worker needs its own AI credential — the local Claude login
   // doesn't travel. Collected now so the finish step can deploy hands-free.
   let aiCredentialSaved = false;
-  let spendLimitConfirmed = false;
   if (railwayApiToken) {
     const envKey = process.env.ANTHROPIC_API_KEY?.trim();
     const aiChoice = await select({
       message: 'Key #2 — the AI brain for the cloud worker:',
       choices: [
         ...(envKey ? [{ name: `Use the Anthropic key already in this shell (${maskKey(envKey)})`, value: 'env' as const }] : []),
-        { name: 'Anthropic API key (pay per use, needs a spend limit)', value: 'anthropic' as const },
+        { name: 'Anthropic API key (pay per use)', value: 'anthropic' as const },
         { name: 'Claude plan token — run `claude setup-token` in another terminal (no separate bill, rides your Pro/Max plan)', value: 'oauth' as const },
         { name: "Skip for now — I'll ask for it in chat before anything deploys", value: 'skip' as const },
       ],
     });
-    let usedApiKey = false;
     if (aiChoice === 'env' && envKey) {
       await saveWorkerAiCredential('ANTHROPIC_API_KEY', envKey);
       aiCredentialSaved = true;
-      usedApiKey = true;
     } else if (aiChoice === 'anthropic' || aiChoice === 'oauth') {
       const value = (await password({ message: 'Paste it:', mask: '*' })).trim();
       if (value) {
         await saveWorkerAiCredential(aiChoice === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'CLAUDE_CODE_OAUTH_TOKEN', value);
         aiCredentialSaved = true;
-        usedApiKey = aiChoice === 'anthropic';
+        if (aiChoice === 'oauth') say('Plan token saved — the worker thinks on your Claude plan, no separate API bill.');
       }
-    }
-    if (aiCredentialSaved && usedApiKey) {
-      // An API key billing an unattended agent is the one place to slow down.
-      say('One guardrail before that key goes anywhere: the worker runs unattended, and an uncapped API key is an uncapped bill.');
-      spendLimitConfirmed = await confirm({
-        message: 'Spend limit set at console.anthropic.com → Billing → Limits?',
-        default: false,
-      });
-      if (!spendLimitConfirmed) {
-        say('Then I hold the launch. Set it whenever, and tell me in chat: "spend limit is set, build my worker".');
-      }
-    } else if (aiCredentialSaved) {
-      // Plan token → billing rides the Claude plan; no separate API bill to cap.
-      spendLimitConfirmed = true;
-      say('Plan token saved — the worker thinks on your Claude plan, no separate API bill.');
     }
   }
   const workerUrl = (
@@ -501,7 +483,7 @@ async function stepPathway(state: InterviewState, paths: KairosPaths): Promise<v
     await writeFile(join(paths.kairosDir, 'RAILWAY.md'), renderRailwayGuide({ timezone, workerToken: workerToken! }), 'utf8');
     say(
       railwayApiToken
-        ? `Everything on my side is staged: worker auth token generated, deploy plan written to kairos/RAILWAY.md as the reference. In our first chat, say "build my Railway worker" and I'll provision it end to end. Two things only you can do, when we get there: hand me an AI credential for the cloud worker (ANTHROPIC_API_KEY, or run \`claude setup-token\` to stay on your Claude plan) and set that Anthropic spend limit first.
+        ? `Everything on my side is staged: worker auth token generated, deploy plan written to kairos/RAILWAY.md as the reference. In our first chat, say "build my Railway worker" and I'll provision it end to end.
 
 Once it's live: automations you pick in chat land in kairos/automations.json, and I ship changes to the worker with a quick sync each time — you never touch Railway again.`
         : `Everything I can do without you is done: your worker auth token is generated and the full deploy guide is at kairos/RAILWAY.md — every value pre-filled, ~10 minutes of copy-paste on railway.app. (Shortcut: paste a Railway API token in chat any time and I'll do the whole deploy for you.)
@@ -518,7 +500,6 @@ How it works once deployed: the worker re-reads kairos/automations.json every 30
     railwayServiceId: railwayServiceId || undefined,
     railwayTokenSaved: Boolean(railwayApiToken),
     aiCredentialSaved,
-    spendLimitConfirmed,
   };
   markStepDone(state, 'pathway');
 }
@@ -541,7 +522,6 @@ async function stepFinish(
     !pathway.workerUrl &&
     pathway.railwayTokenSaved &&
     pathway.aiCredentialSaved &&
-    pathway.spendLimitConfirmed &&
     pathway.workerToken
   ) {
     const railwayToken = await resolveRailwayToken();

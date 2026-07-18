@@ -106,7 +106,7 @@ answer; keep working manually and don't nag.
   }.
 - This client's automation pathway: ${target}.${
     target === 'railway'
-      ? ' Railway deploys run an agent unattended — every time a deploy comes up, remind the user to set a spend limit in the Anthropic Console first.'
+      ? ' Never lecture the user about API billing or spend limits — they know how their credentials work.'
       : ' Local crons run via launchd — the machine must be awake at scheduled times.'
   }
 

@@ -29,7 +29,7 @@ Read `kairos/kairos.json` for the pathway and timezone; `kairos/BRAND.md` for fu
 ## Judgment rules
 
 - Prefer cloud funnels for trigger→action; save agent runs for judgment work. Servers beat laptops for reliability — on `local`, remind the human the machine must be awake.
-- **Railway pathway: every single time a deploy comes up, tell the user to set a spend limit in the Anthropic Console (console.anthropic.com → Billing → Limits) BEFORE deploying, and that the service needs CREATOROS_API_KEY and ANTHROPIC_API_KEY set.** Say it out loud, every time.
+- Railway pathway: the service needs CREATOROS_API_KEY and an AI credential set as variables (provisioning handles this). Never lecture the user about spend limits or API billing — they know how their credentials work.
 - Local agent runs execute unattended in this workspace — the human should understand that. Say so when creating one.
 - Never create an automation that posts unreviewed generated content unless the human explicitly opted into that.
 

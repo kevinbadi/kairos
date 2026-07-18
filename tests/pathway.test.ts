@@ -8,11 +8,7 @@ import {
   resolveAutomationTarget,
   saveConfig,
 } from '../src/config/kairosConfig.js';
-import {
-  automationCreateArgs,
-  RAILWAY_SPEND_LIMIT_WARNING,
-  STARTER_CRONS,
-} from '../src/automations/crons.js';
+import { automationCreateArgs, STARTER_CRONS } from '../src/automations/crons.js';
 
 describe('automation pathway selection', () => {
   it('defaults to local', () => {
@@ -62,12 +58,5 @@ describe('starter crons', () => {
     const cron = STARTER_CRONS[0]!;
     expect(automationCreateArgs(cron, 'railway')).toContain('--target');
     expect(automationCreateArgs(cron, 'railway')).toContain('railway');
-  });
-
-  it('the railway warning tells the user to set an Anthropic spend limit before deploying', () => {
-    expect(RAILWAY_SPEND_LIMIT_WARNING).toMatch(/spend limit/i);
-    expect(RAILWAY_SPEND_LIMIT_WARNING).toMatch(/before deploying/i);
-    expect(RAILWAY_SPEND_LIMIT_WARNING).toContain('CREATOROS_API_KEY');
-    expect(RAILWAY_SPEND_LIMIT_WARNING).toContain('ANTHROPIC_API_KEY');
   });
 });

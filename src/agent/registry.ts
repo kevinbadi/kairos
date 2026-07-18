@@ -13,7 +13,6 @@ import {
   deleteAutomation,
   STARTER_CRONS,
   verifyAutomations,
-  RAILWAY_SPEND_LIMIT_WARNING,
   type StarterCron,
 } from '../automations/crons.js';
 import { buildFunnelAutomation } from '../automations/funnels.js';
@@ -394,7 +393,7 @@ export function buildToolRegistry(
     // ---- Scheduled agent automations (crons) ----
     t(
       'create_cron_automation',
-      `Create a scheduled agent run (cron) on the configured pathway (${config?.automationTarget ?? 'local'}). Starter crons: ${STARTER_CRONS.map((c) => c.name).join(', ')}. Railway: remind the user about the Anthropic spend limit — ${RAILWAY_SPEND_LIMIT_WARNING}`,
+      `Create a scheduled agent run (cron) on the configured pathway (${config?.automationTarget ?? 'local'}). Starter crons: ${STARTER_CRONS.map((c) => c.name).join(', ')}.`,
       {
         name: z.string().describe('lowercase-with-hyphens'),
         schedule: z.string().describe('Strict 5-field cron, e.g. "0 9 * * *"'),

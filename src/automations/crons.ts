@@ -56,11 +56,6 @@ export const STARTER_CRONS: StarterCron[] = [
   },
 ];
 
-export const RAILWAY_SPEND_LIMIT_WARNING =
-  'Before deploying to Railway: set a spend limit in the Anthropic Console ' +
-  '(console.anthropic.com → Billing → Limits). The service runs an agent ' +
-  'unattended — an uncapped key is an uncapped bill. The service also needs ' +
-  'CREATOROS_API_KEY and ANTHROPIC_API_KEY set as environment variables.';
 
 /** Build the argv for `creatoros automations:create` on either pathway. */
 export function automationCreateArgs(cron: StarterCron, target: AutomationTarget): string[] {
