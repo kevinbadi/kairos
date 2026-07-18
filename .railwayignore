@@ -1,0 +1,15 @@
+# What does NOT ship to Railway (`railway up` uploads everything else).
+# The Docker build runs npm ci itself — uploading node_modules (~350MB)
+# chokes the upload and buys nothing.
+node_modules
+.git
+logs
+creatoros
+.DS_Store
+*.log
+
+# Everything else SHIPS on purpose — the worker needs it:
+#   src/ + package files + Dockerfile.worker   the code it runs
+#   kairos/                                    config, skills, automations.json
+#   templates/                                 skill templates
+#   content-library/                           media the posting automations publish

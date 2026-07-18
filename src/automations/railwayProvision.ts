@@ -11,6 +11,9 @@
  * retry vehicle.
  */
 import { spawn } from 'node:child_process';
+import { writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { fetchWorkerState } from '../dashboard/worker.js';
 
 export interface ProvisionInputs {
@@ -46,6 +49,23 @@ export function provisionVariableArgs(inputs: ProvisionInputs): string[] {
     '--set', 'RAILWAY_DOCKERFILE_PATH=Dockerfile.worker',
     '--skip-deploys',
   ];
+}
+
+/**
+ * What NOT to upload. The Docker build installs its own deps — shipping
+ * node_modules (~350MB) chokes `railway up`. Everything else (src,
+ * kairos/, templates/, content-library/) ships on purpose.
+ */
+export const RAILWAY_IGNORE = 'node_modules\n.git\nlogs\ncreatoros\n.DS_Store\n*.log\n';
+
+/** Make sure the upload manifest exists before any `railway up`. Best-effort — a slow upload beats a dead deploy. */
+export async function ensureRailwayIgnore(workspaceRoot: string): Promise<void> {
+  try {
+    const path = join(workspaceRoot, '.railwayignore');
+    if (!existsSync(path)) await writeFile(path, RAILWAY_IGNORE, 'utf8');
+  } catch {
+    // unwritable workspace — the upload just carries more than it should
+  }
 }
 
 /** Pull the generated domain out of `railway domain` output. */
@@ -145,6 +165,7 @@ export async function provisionRailwayWorker(
   if (vars.code !== 0) return fail('railway variables', vars.stderr || vars.stdout);
 
   onProgress('Uploading this workspace and starting the build (a few minutes)…');
+  await ensureRailwayIgnore(root); // never upload node_modules/.git
   const up = await runner(['up', '--detach'], root, token);
   if (up.code !== 0) return fail('railway up', up.stderr || up.stdout);
 

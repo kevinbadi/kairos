@@ -119,3 +119,20 @@ describe('provisionRailwayWorker orchestration (mocked CLI)', () => {
     expect(parseProjectName('not json')).toBe(null);
   });
 });
+
+describe('upload manifest', () => {
+  it('writes .railwayignore before upload when missing, and respects an existing one', async () => {
+    const { mkdtemp, readFile: rf, writeFile: wf } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join: j } = await import('node:path');
+    const { ensureRailwayIgnore } = await import('../src/automations/railwayProvision.js');
+    const root = await mkdtemp(j(tmpdir(), 'kairos-rwignore-'));
+    await ensureRailwayIgnore(root);
+    const written = await rf(j(root, '.railwayignore'), 'utf8');
+    expect(written).toContain('node_modules');
+    expect(written).toContain('.git');
+    await wf(j(root, '.railwayignore'), 'custom\n', 'utf8');
+    await ensureRailwayIgnore(root);
+    expect(await rf(j(root, '.railwayignore'), 'utf8')).toBe('custom\n');
+  });
+});

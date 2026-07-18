@@ -20,11 +20,12 @@ Run from the workspace root:
 2. Set every variable in one shot (values from the sources above — compose the command yourself, never show values in your report):
    `railway variables --set "CREATOROS_API_KEY=…" --set "ANTHROPIC_API_KEY=…" (or CLAUDE_CODE_OAUTH_TOKEN) --set "KAIROS_WORKER_TOKEN=…" --set "TZ=<timezone>" --set "RAILWAY_DOCKERFILE_PATH=Dockerfile.worker"`
    `RAILWAY_DOCKERFILE_PATH` is what makes Railway build from `Dockerfile.worker` instead of autodetecting.
-3. `railway up --detach` — uploads this workspace and builds. Watch with `railway logs --build` until the build succeeds; on failure, read the error, fix, re-up.
-4. `railway domain` — generates the public URL. Capture it.
-5. `railway status --json` — capture the service id.
-6. Save to `kairos/kairos.json`: `worker.url` (the domain, with https://), and `railway.serviceId`. `worker.token` should already be there — if not, set it to the KAIROS_WORKER_TOKEN you deployed.
-7. Verify: `curl -s -H "Authorization: Bearer <worker token>" https://<domain>/health` — expect `"service":"kairos-worker"`. Give the container a minute to boot before declaring failure; retry twice.
+3. **Know what ships before uploading.** Make sure `.railwayignore` exists in the workspace root with at least: `node_modules`, `.git`, `logs`, `creatoros` — the Docker build runs `npm ci` itself, and uploading node_modules (~350MB) chokes `railway up`. What DOES ship, on purpose: `src/` + package files + `Dockerfile.worker` (the code), `kairos/` (config, skills, automations.json), `templates/`, and `content-library/` (media the posting automations publish — if it's huge, warn the human that every deploy re-uploads it).
+4. `railway up --detach` — uploads this workspace and builds. Watch with `railway logs --build` until the build succeeds; on failure, read the error, fix, re-up.
+5. `railway domain` — generates the public URL. Capture it.
+6. `railway status --json` — capture the service id.
+7. Save to `kairos/kairos.json`: `worker.url` (the domain, with https://), and `railway.serviceId`. `worker.token` should already be there — if not, set it to the KAIROS_WORKER_TOKEN you deployed.
+8. Verify: `curl -s -H "Authorization: Bearer <worker token>" https://<domain>/health` — expect `"service":"kairos-worker"`. Give the container a minute to boot before declaring failure; retry twice.
 
 ## Judgment rules
 
