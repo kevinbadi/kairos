@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kairos — Mission Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #08090d;
+    --panel: #0e1218;
+    --panel-2: #12161f;
+    --line: #1c2330;
+    --line-2: #283244;
+    --amber: #ffb000;
+    --amber-dim: #7a5500;
+    --cyan: #00e5ff;
+    --text: #cbd5e1;
+    --dim: #5c6b80;
+    --green: #34d399;
+    --red: #f87171;
+    --font: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.55;
+    overflow: hidden;
+  }
+  /* phosphor scanlines + vignette — the CRT the CLI deserves */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 999;
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0 1px, transparent 1px 3px),
+      radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.45) 100%);
+  }
+  ::selection { background: var(--amber); color: #000; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  .app { display: grid; grid-template-columns: 232px 1fr; height: 100vh; }
+
+  /* ---------- sidebar ---------- */
+  .side {
+    border-right: 1px solid var(--line);
+    background: linear-gradient(180deg, var(--panel) 0%, var(--bg) 100%);
+    display: flex; flex-direction: column; padding: 22px 0;
+  }
+  .wordmark { padding: 0 20px 4px; letter-spacing: 0.42em; font-weight: 600; font-size: 15px;
+    background: linear-gradient(90deg, #ffd24d, var(--amber), #ff8a00);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .wordmark span { color: var(--amber); }
+  .tagline { padding: 0 20px 22px; color: var(--dim); font-size: 10.5px; letter-spacing: 0.08em; }
+  .nav { display: flex; flex-direction: column; gap: 2px; padding: 0 10px; }
+  .nav button {
+    all: unset; cursor: pointer; padding: 9px 12px; border-radius: 4px;
+    color: var(--dim); font-family: inherit; font-size: 12.5px; letter-spacing: 0.05em;
+    display: flex; align-items: center; gap: 10px; transition: color .15s, background .15s;
+  }
+  .nav button .glyph { width: 14px; text-align: center; color: var(--line-2); transition: color .15s; }
+  .nav button:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+  .nav button.active { color: var(--amber); background: rgba(255,176,0,0.07); }
+  .nav button.active .glyph { color: var(--amber); }
+  .side .foot { margin-top: auto; padding: 16px 20px 0; border-top: 1px solid var(--line); font-size: 10.5px; color: var(--dim); }
+  .side .foot div { padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side .foot b { color: var(--text); font-weight: 500; }
+
+  /* ---------- main ---------- */
+  .main { display: flex; flex-direction: column; overflow: hidden; }
+  .topbar {
+    display: flex; align-items: center; gap: 14px; padding: 14px 26px;
+    border-bottom: 1px solid var(--line); background: rgba(14,18,24,0.6);
+  }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2.2s infinite; }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+  .topbar .label { font-size: 11px; letter-spacing: 0.22em; color: var(--dim); }
+  .topbar .right { margin-left: auto; font-size: 11px; color: var(--dim); }
+  .topbar .right b { color: var(--cyan); font-weight: 500; }
+
+  .view { flex: 1; overflow-y: auto; padding: 26px; display: none; }
+  .view.active { display: block; }
+  .view h2 { font-size: 11px; letter-spacing: 0.28em; color: var(--dim); font-weight: 500; margin: 26px 0 12px; }
+  .view h2:first-child { margin-top: 0; }
+  .view h2::before { content: '▮ '; color: var(--amber); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px;
+    animation: rise .4s cubic-bezier(.2,.7,.3,1) both;
+  }
+  .grid .card:nth-child(2) { animation-delay: .05s; } .grid .card:nth-child(3) { animation-delay: .1s; }
+  .grid .card:nth-child(4) { animation-delay: .15s; } .grid .card:nth-child(5) { animation-delay: .2s; }
+  .grid .card:nth-child(6) { animation-delay: .25s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+  .card .k { font-size: 10px; letter-spacing: 0.18em; color: var(--dim); margin-bottom: 6px; }
+  .card .v { font-size: 16px; color: var(--text); font-weight: 500; word-break: break-word; }
+  .card .v.amber { color: var(--amber); } .card .v.cyan { color: var(--cyan); }
+  .card .sub { font-size: 11px; color: var(--dim); margin-top: 4px; }
+
+  .badge { display: inline-block; font-size: 9.5px; letter-spacing: 0.14em; padding: 2px 8px; border-radius: 3px; border: 1px solid; vertical-align: middle; }
+  .badge.live { color: var(--green); border-color: rgba(52,211,153,0.4); background: rgba(52,211,153,0.07); }
+  .badge.live::before { content: '● '; animation: pulse 2s infinite; }
+  .badge.off { color: var(--dim); border-color: var(--line-2); }
+  .badge.soon { color: var(--amber); border-color: rgba(255,176,0,0.35); background: rgba(255,176,0,0.05); }
+  .badge.err { color: var(--red); border-color: rgba(248,113,113,0.4); }
+
+  .row-card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; margin-bottom: 10px; padding: 14px 16px; animation: rise .4s both; }
+  .row-card .head { display: flex; align-items: center; gap: 10px; }
+  .row-card .name { color: var(--text); font-weight: 600; font-size: 13.5px; }
+  .row-card .pillar { font-size: 9.5px; letter-spacing: 0.14em; color: var(--cyan); border: 1px solid rgba(0,229,255,0.25); padding: 1px 7px; border-radius: 3px; }
+  .row-card .desc { color: var(--dim); font-size: 12px; margin-top: 6px; max-width: 72ch; }
+  .row-card .meta { margin-left: auto; display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--dim); }
+  .row-card.soon { border-style: dashed; opacity: 0.75; }
+  .chip { display: inline-block; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 3px; padding: 1px 8px; margin: 2px 4px 2px 0; font-size: 11px; color: var(--text); }
+  pre.raw { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; color: var(--dim); font-size: 11.5px; overflow-x: auto; white-space: pre-wrap; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; color: var(--dim); font-weight: 500; font-size: 10px; letter-spacing: 0.16em; padding: 8px 10px; border-bottom: 1px solid var(--line-2); }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--text); }
+  td.dim { color: var(--dim); }
+
+  .empty { color: var(--dim); font-size: 12px; padding: 18px; border: 1px dashed var(--line-2); border-radius: 6px; }
+  .hint { color: var(--dim); font-size: 11.5px; margin-top: 10px; }
+  .hint b { color: var(--cyan); font-weight: 500; }
+
+  /* ---------- chat ---------- */
+  #view-chat { display: none; flex-direction: column; padding: 0; }
+  #view-chat.active { display: flex; }
+  .chat-scroll { flex: 1; overflow-y: auto; padding: 26px 30px 12px; }
+  .chat-inner { max-width: 860px; margin: 0 auto; }
+  .msg { margin: 14px 0; animation: rise .25s both; }
+  .msg.user { color: var(--text); }
+  .msg.user::before { content: '❯ '; color: var(--amber); font-weight: 600; }
+  .msg.kai { white-space: pre-wrap; }
+  .msg.kai::before { content: '⏺ '; color: var(--cyan); }
+  .msg.kai b { color: #fff; } .msg.kai i { color: var(--text); } .msg.kai code { color: var(--cyan); }
+  .tool-line { color: var(--dim); font-size: 12px; margin: 4px 0 0 2px; }
+  .tool-line::before { content: '⏺ '; color: var(--dim); }
+  .tool-result { color: var(--dim); font-size: 11.5px; margin: 1px 0 1px 16px; }
+  .tool-result::before { content: '⎿ '; }
+  .tool-result.err { color: var(--red); }
+  .thinking { color: var(--dim); font-size: 12px; margin: 12px 0; }
+  .thinking .spin { color: var(--amber); display: inline-block; }
+  .chat-input-wrap { padding: 0 30px 22px; }
+  .chat-input { max-width: 860px; margin: 0 auto; border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); display: flex; align-items: center; gap: 10px; padding: 10px 4px; }
+  .chat-input .p { color: var(--amber); font-weight: 600; }
+  .chat-input input { flex: 1; background: transparent; border: 0; outline: 0; color: var(--text); font-family: inherit; font-size: 13.5px; caret-color: var(--amber); }
+  .chat-input input::placeholder { color: var(--dim); }
+  .chat-hint { max-width: 860px; margin: 6px auto 0; font-size: 10.5px; color: var(--dim); text-align: right; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="wordmark">KAIROS</div>
+    <div class="tagline">the CreatorOS agent · mission control</div>
+    <nav class="nav" id="nav">
+      <button data-view="overview" class="active"><span class="glyph">◈</span>Overview</button>
+      <button data-view="automations"><span class="glyph">⟳</span>Automations</button>
+      <button data-view="workflows"><span class="glyph">⧉</span>Workflows</button>
+      <button data-view="analytics"><span class="glyph">∿</span>Analytics</button>
+      <button data-view="chat"><span class="glyph">❯</span>Chat with Kai</button>
+    </nav>
+    <div class="foot">
+      <div>key <b id="f-key">…</b></div>
+      <div>brain <b id="f-brain">…</b></div>
+      <div>pathway <b id="f-pathway">…</b></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="status-dot" id="agent-dot"></div>
+      <div class="label" id="agent-label">AGENT ONLINE</div>
+      <div class="right" id="clock"></div>
+    </div>
+
+    <section class="view active" id="view-overview">
+      <h2>STATE OF THE OPERATION</h2>
+      <div class="grid" id="ov-cards"></div>
+      <h2>CONNECTED ACCOUNTS</h2>
+      <div id="ov-accounts" class="empty">loading…</div>
+    </section>
+
+    <section class="view" id="view-automations">
+      <h2>SCHEDULED AUTOMATIONS</h2>
+      <div id="au-crons" class="empty">loading…</div>
+      <h2>COMMENTS → DM FUNNEL</h2>
+      <div id="au-funnel" class="empty">loading…</div>
+      <h2>AUTO-REPLIES</h2>
+      <div id="au-replies" class="empty">loading…</div>
+      <h2>ENGAGEMENT AGENT</h2>
+      <div id="au-agent" class="empty">loading…</div>
+      <p class="hint">Turn anything on or off from <b>Chat with Kai</b> — e.g. “turn on the engagement sweep” or “pause the funnel”.</p>
+    </section>
+
+    <section class="view" id="view-workflows">
+      <h2>RUNNING NOW</h2>
+      <div id="wf-live" class="empty">loading…</div>
+      <h2>READY TO TURN ON</h2>
+      <div id="wf-available" class="empty">loading…</div>
+      <h2>ON THE ROADMAP — CONTENT MARKETING WORKFLOWS</h2>
+      <div id="wf-soon" class="empty">loading…</div>
+    </section>
+
+    <section class="view" id="view-analytics">
+      <h2>FOLLOWER GROWTH — LAST 30 DAYS</h2>
+      <div class="grid" id="an-followers"></div>
+      <h2>RECENT POSTS</h2>
+      <div id="an-posts" class="empty">loading…</div>
+    </section>
+
+    <section class="view" id="view-chat">
+      <div class="chat-scroll" id="chat-scroll"><div class="chat-inner" id="chat-inner">
+        <div class="msg kai">Kai here — same agent as the terminal, same workspace. Ask me to check your automations, schedule the week, or read the analytics.</div>
+      </div></div>
+      <div class="chat-input-wrap">
+        <div class="chat-input">
+          <span class="p">❯</span>
+          <input id="chat-input" placeholder="talk to kai…" autocomplete="off" />
+        </div>
+        <div class="chat-hint">enter to send · the agent can post, schedule, and reply — it confirms before anything goes live</div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* nav */
+document.querySelectorAll('#nav button').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#nav button').forEach((b) => b.classList.remove('active'));
+    document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
+    btn.classList.add('active');
+    $('view-' + btn.dataset.view).classList.add('active');
+    if (btn.dataset.view === 'chat') $('chat-input').focus();
+  });
+});
+
+/* clock */
+setInterval(() => { $('clock').textContent = new Date().toLocaleString(); }, 1000);
+
+async function api(path) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+/* ---------- overview ---------- */
+async function loadOverview() {
+  try {
+    const d = await api('/api/overview');
+    $('f-key').textContent = d.maskedKey;
+    $('f-brain').textContent = d.brain;
+    $('f-pathway').textContent = d.pathway + ' · ' + d.timezone;
+    if (!d.brainReady) { $('agent-label').textContent = 'AGENT BRAIN OFFLINE'; $('agent-dot').style.background = 'var(--red)'; $('agent-dot').style.boxShadow = '0 0 8px var(--red)'; }
+    $('ov-cards').innerHTML = [
+      card('MODE', esc(d.mode), ''),
+      card('ACCOUNTS', d.accounts.length, d.accounts.filter((a) => a.active).length + ' active', 'cyan'),
+      card('PATHWAY', esc(d.pathway), esc(d.timezone)),
+      card('BRAIN', esc(d.brain), d.brainReady ? 'connected' : 'not connected on this machine', 'amber'),
+      card('ONBOARDED', d.onboardedAt ? new Date(d.onboardedAt).toLocaleDateString() : '—', ''),
+    ].join('');
+    $('ov-accounts').className = '';
+    $('ov-accounts').innerHTML = d.accounts.length
+      ? '<table><tr><th>PLATFORM</th><th>HANDLE</th><th>STATUS</th></tr>' + d.accounts.map((a) =>
+          '<tr><td>' + esc(a.platform) + '</td><td class="dim">@' + esc(a.username) + '</td><td>' +
+          badge(a.health ? a.health : (a.active ? 'active' : 'inactive'), a.active ? 'live' : 'err') + '</td></tr>'
+        ).join('') + '</table>'
+      : '<div class="empty">No accounts connected yet — connect them in the CreatorOS app.</div>';
+  } catch (e) { $('ov-accounts').textContent = 'Could not load: ' + e.message; }
+}
+const card = (k, v, sub, tone) => '<div class="card"><div class="k">' + k + '</div><div class="v ' + (tone || '') + '">' + v + '</div>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>';
+const badge = (text, cls) => '<span class="badge ' + cls + '">' + esc(String(text).toUpperCase()) + '</span>';
+
+/* ---------- automations ---------- */
+async function loadAutomations() {
+  try {
+    const d = await api('/api/automations');
+    const cronsEl = $('au-crons'); cronsEl.className = '';
+    cronsEl.innerHTML = d.crons.output
+      ? '<pre class="raw">' + esc(d.crons.output) + '</pre>'
+      : '<div class="empty">No scheduled automations yet — ask Kai to create the starter crons.</div>';
+
+    const f = d.funnel || {}; const fEl = $('au-funnel'); fEl.className = '';
+    fEl.innerHTML = '<div class="row-card"><div class="head"><span class="name">comments-to-DM funnel</span>' +
+      badge(f.enabled ? 'LIVE' : 'OFF', f.enabled ? 'live' : 'off') + '</div>' +
+      (f.enabled
+        ? '<div class="desc">Keywords: ' + (f.keywords || []).map((k) => '<span class="chip">' + esc(k) + '</span>').join('') +
+          (f.link ? '<br>Sends: ' + esc(f.link) : '') +
+          (f.dmMessage ? '<br><br>“' + esc(f.dmMessage) + '”' : '') + '</div>'
+        : '<div class="desc">Off. Someone comments a keyword → they get your link in a DM. Ask Kai to set it up — it takes a minute.</div>') +
+      '</div>';
+
+    const r = d.autoReplies; const rEl = $('au-replies'); rEl.className = '';
+    rEl.innerHTML = r
+      ? ['comments', 'messages'].map((kind) => {
+          const c = r[kind];
+          return '<div class="row-card"><div class="head"><span class="name">' + kind + '</span>' +
+            badge(c.enabled ? 'LIVE' : 'OFF', c.enabled ? 'live' : 'off') + '</div><div class="desc">' +
+            (c.enabled ? 'Platforms: ' + c.platforms.map((p) => '<span class="chip">' + esc(p) + '</span>').join('') : 'Off — ask Kai to turn it on.') +
+            (c.escalate && c.escalate.length ? '<br>Always escalated to you: ' + c.escalate.map((t) => '<span class="chip">' + esc(t) + '</span>').join('') : '') +
+            '</div></div>';
+        }).join('')
+      : '<div class="empty">Not configured — say “turn on auto-replies” in the chat.</div>';
+
+    const g = d.engagementAgent; const gEl = $('au-agent'); gEl.className = '';
+    gEl.innerHTML = g
+      ? '<div class="row-card"><div class="head"><span class="name">persona</span></div><div class="desc">' + esc(g.persona) + '</div></div>' +
+        '<div class="row-card"><div class="head"><span class="name">objective</span><span class="pillar">' + esc(g.objective) + '</span></div><div class="desc">' + esc(g.objectiveDetail || 'drive every conversation toward the objective') + '</div></div>'
+      : '<div class="empty">No engagement agent programmed yet.</div>';
+  } catch (e) { $('au-crons').textContent = 'Could not load: ' + e.message; }
+}
+
+/* ---------- workflows ---------- */
+async function loadWorkflows() {
+  try {
+    const d = await api('/api/workflows');
+    const groups = { live: [], available: [], 'coming-soon': [] };
+    d.workflows.forEach((w) => groups[w.status].push(w));
+    const render = (list, extraClass) => list.map((w) =>
+      '<div class="row-card ' + (extraClass || '') + '"><div class="head"><span class="name">' + esc(w.name) + '</span>' +
+      '<span class="pillar">' + esc(w.pillar) + '</span>' +
+      '<div class="meta">' + (w.cadence ? esc(w.cadence) + ' · ' : '') +
+      badge(w.status === 'live' ? 'LIVE' : w.status === 'available' ? 'READY' : 'SOON', w.status === 'live' ? 'live' : w.status === 'available' ? 'off' : 'soon') +
+      '</div></div><div class="desc">' + esc(w.description) + '</div></div>').join('');
+    const set = (id, list, cls, emptyMsg) => { const el = $(id); el.className = ''; el.innerHTML = list.length ? render(list, cls) : '<div class="empty">' + emptyMsg + '</div>'; };
+    set('wf-live', groups.live, '', 'Nothing scheduled yet — ask Kai to turn on a workflow below.');
+    set('wf-available', groups.available, '', 'Everything available is already running.');
+    set('wf-soon', groups['coming-soon'], 'soon', '');
+  } catch (e) { $('wf-live').textContent = 'Could not load: ' + e.message; }
+}
+
+/* ---------- analytics ---------- */
+async function loadAnalytics() {
+  try {
+    const d = await api('/api/analytics');
+    const fEl = $('an-followers');
+    const accounts = d.followers && d.followers.accounts;
+    fEl.innerHTML = accounts && accounts.length
+      ? accounts.map((a) => card(
+          esc((a.platform || '').toUpperCase()) + ' @' + esc(a.username || ''),
+          (a.currentFollowers ?? 0).toLocaleString(),
+          (a.growth >= 0 ? '+' : '') + a.growth + ' (' + a.growthPercentage + '%) / 30d',
+          a.growth >= 0 ? 'cyan' : '')).join('')
+      : '<div class="empty" style="grid-column:1/-1">' + esc((d.followers && d.followers.error) ? 'Follower stats need the analytics add-on.' : 'No follower data yet.') + '</div>';
+    const pEl = $('an-posts'); pEl.className = '';
+    const posts = d.posts && d.posts.posts;
+    pEl.innerHTML = posts && posts.length
+      ? '<table><tr><th>WHEN</th><th>CONTENT</th><th>STATUS</th></tr>' + posts.map((p) => {
+          const when = p.scheduledFor || p.createdAt || '';
+          const text = (p.caption || p.title || p.content || '').slice(0, 80);
+          const st = (p.status || 'unknown').toLowerCase();
+          const cls = st.includes('post') || st.includes('publish') ? 'live' : st.includes('fail') || st.includes('error') ? 'err' : 'off';
+          return '<tr><td class="dim">' + (when ? new Date(when).toLocaleString() : '—') + '</td><td>' + esc(text) + '</td><td>' + badge(st, cls) + '</td></tr>';
+        }).join('') + '</table>'
+      : '<div class="empty">' + esc((d.posts && d.posts.error) || 'No posts on record yet — ask Kai to schedule the week.') + '</div>';
+  } catch (e) { $('an-posts').textContent = 'Could not load: ' + e.message; }
+}
+
+/* ---------- chat ---------- */
+let sessionId = null;
+let busy = false;
+const FRAMES = ['✳', '✶', '✻', '✽', '✻', '✶'];
+const mdLite = (s) => esc(s)
+  .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+  .replace(/`([^`]+)`/g, '<code>$1</code>')
+  .replace(/(^|\W)\*([^*\n]+)\*(?=\W|$)/g, '$1<i>$2</i>');
+
+function chatAppend(html, cls) {
+  const el = document.createElement('div');
+  el.className = cls;
+  el.innerHTML = html;
+  $('chat-inner').appendChild(el);
+  $('chat-scroll').scrollTop = $('chat-scroll').scrollHeight;
+  return el;
+}
+
+async function sendChat(message) {
+  busy = true;
+  chatAppend(esc(message), 'msg user');
+  const think = chatAppend('<span class="spin">✳</span> kai is thinking… <span class="secs">0s</span>', 'thinking');
+  let frame = 0; const started = Date.now();
+  const spin = setInterval(() => {
+    think.querySelector('.spin').textContent = FRAMES[frame++ % FRAMES.length];
+    think.querySelector('.secs').textContent = Math.floor((Date.now() - started) / 1000) + 's';
+  }, 140);
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, sessionId }),
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) !== -1) {
+        const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+        if (!line) continue;
+        let ev; try { ev = JSON.parse(line); } catch { continue; }
+        if (ev.type === 'init') sessionId = ev.sessionId;
+        else if (ev.type === 'text') chatAppend(mdLite(ev.text.trim()), 'msg kai');
+        else if (ev.type === 'tool') chatAppend(esc(ev.name) + '(' + esc((ev.args || '{}').slice(1, -1)) + ')', 'tool-line');
+        else if (ev.type === 'tool_result') chatAppend(esc(ev.text), 'tool-result' + (ev.isError ? ' err' : ''));
+        else if (ev.type === 'error') chatAppend(esc(ev.text), 'tool-result err');
+        $('chat-scroll').scrollTop = $('chat-scroll').scrollHeight;
+      }
+    }
+  } catch (e) {
+    chatAppend('connection lost: ' + esc(e.message), 'tool-result err');
+  }
+  clearInterval(spin);
+  think.remove();
+  busy = false;
+}
+
+$('chat-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !busy) {
+    const v = e.target.value.trim();
+    if (!v) return;
+    e.target.value = '';
+    sendChat(v);
+  }
+});
+
+/* boot + refresh */
+function refreshAll() { loadOverview(); loadAutomations(); loadWorkflows(); loadAnalytics(); }
+refreshAll();
+setInterval(refreshAll, 60000);
+</script>
+</body>
+</html>

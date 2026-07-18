@@ -19,8 +19,10 @@ const deps = spawnSync(process.execPath, [join(root, 'scripts', 'ensure-deps.mjs
 });
 if (deps.status !== 0) process.exit(deps.status ?? 1);
 
+// `kai` → the chat; `kai dashboard` → mission control in the browser.
+const sub = (process.argv[2] ?? 'kai').toLowerCase();
 const tsx = join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'tsx.cmd' : 'tsx');
-const run = spawnSync(tsx, [join(root, 'src', 'index.ts'), 'creatoros', 'kai'], {
+const run = spawnSync(tsx, [join(root, 'src', 'index.ts'), 'creatoros', sub], {
   cwd: root,
   stdio: 'inherit',
 });

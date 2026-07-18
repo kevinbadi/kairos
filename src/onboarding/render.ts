@@ -60,10 +60,6 @@ ${links}
 - Emoji policy: ${brand.emojiPolicy}
 - Hashtag policy: ${brand.hashtagPolicy}
 
-### Example caption we love
-
-> ${brand.exampleCaption.split('\n').join('\n> ')}
-
 ## Target audience
 
 ${brand.audience}

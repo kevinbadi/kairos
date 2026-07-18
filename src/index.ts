@@ -13,15 +13,17 @@ import { loadState, isInterviewComplete } from './onboarding/state.js';
 import { resolveApiKey } from './config/credentials.js';
 import { CreatorOSClient } from './client/client.js';
 
-export type Route = 'kairos' | 'usage';
+export type Route = 'kairos' | 'dashboard' | 'usage';
 
-/** Route on positional args: `creatoros kairos` or `creatoros kai`. */
+/** Route on positional args: `creatoros kairos`, `creatoros kai`, `creatoros dashboard`. */
 export function routeArgs(argv: string[]): Route {
   const args = argv.filter((a) => a !== '--');
   const index = args.indexOf('creatoros');
   if (index === -1) return 'usage';
   const command = (args[index + 1] ?? '').toLowerCase();
-  return command === 'kairos' || command === 'kai' ? 'kairos' : 'usage';
+  if (command === 'kairos' || command === 'kai') return 'kairos';
+  if (command === 'dashboard') return 'dashboard';
+  return 'usage';
 }
 
 export function usage(): string {
@@ -31,7 +33,9 @@ export function usage(): string {
     'Usage:',
     '  npm start creatoros kairos    start Kairos (first run = onboarding interview)',
     '  npm start creatoros kai       same thing, shorter',
+    '  npm start creatoros dashboard the Kairos dashboard — automations, workflows, analytics, chat in the browser',
     '  kai                           open a session from any terminal (run `npm link` once to enable)',
+    '  kai dashboard                 same dashboard, from anywhere',
     '',
     'Sessions are independent conversations — open as many terminals as you like;',
     'they all share the same kairos/ workspace, brand pack, and credentials.',
@@ -40,8 +44,13 @@ export function usage(): string {
 
 async function main(): Promise<void> {
   const route = routeArgs(process.argv.slice(2));
-  if (route !== 'kairos') {
+  if (route === 'usage') {
     console.log(usage());
+    return;
+  }
+
+  if (route === 'dashboard') {
+    await runDashboard();
     return;
   }
 
@@ -81,6 +90,33 @@ async function main(): Promise<void> {
   const config = await loadConfig(paths.configJson);
   const { runRepl } = await import('./agent/repl.js');
   await runRepl(client, config, paths.root);
+}
+
+/** `kai dashboard` — mission control in the browser, over the same workspace. */
+async function runDashboard(): Promise<void> {
+  const paths = kairosPaths();
+  const apiKey = await resolveApiKey();
+  if (!apiKey || !existsSync(paths.configJson)) {
+    console.error(
+      'The dashboard needs a finished setup. Run `npm start creatoros kairos` first — the dashboard reads everything the onboarding writes.',
+    );
+    process.exitCode = 1;
+    return;
+  }
+  const client = new CreatorOSClient({ apiKey });
+  const config = await loadConfig(paths.configJson);
+  const { startDashboard, openBrowser } = await import('./dashboard/server.js');
+  const { url } = await startDashboard(client, config, paths.root);
+  console.log(`\nKairos dashboard is live: ${url}`);
+  console.log('\x1b[2mAutomations, workflows, analytics, and Kai chat — all in the browser. Ctrl-C stops it.\x1b[0m');
+  openBrowser(url);
+  // Keep the process alive until the user stops it.
+  await new Promise<void>((resolve) => {
+    process.on('SIGINT', () => {
+      console.log('\nDashboard stopped. Your automations keep running on their schedules.');
+      resolve();
+    });
+  });
 }
 
 // Only run when executed directly (not when imported by tests).

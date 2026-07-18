@@ -62,7 +62,6 @@ describe('interview persistence & resume', () => {
       voiceNever: 'corporate',
       emojiPolicy: 'none',
       hashtagPolicy: 'none',
-      exampleCaption: 'Show up. Again.',
       audience: 'busy parents',
       competitors: ['@bigcoach'],
     };
@@ -107,7 +106,6 @@ describe('brand pack rendering', () => {
     voiceNever: 'thirsty',
     emojiPolicy: 'sparingly (max one per caption)',
     hashtagPolicy: 'a few relevant ones (2-4)',
-    exampleCaption: '48 hours. Then gone.',
     audience: 'sneakerheads 18-30',
     competitors: ['@rivalbrand', '@otherbrand'],
   };
@@ -120,7 +118,6 @@ describe('brand pack rendering', () => {
     expect(md).toContain('Styling service (no link yet)');
     expect(md).toContain('@rivalbrand');
     expect(md).toContain('sneakerheads 18-30');
-    expect(md).toContain('48 hours. Then gone.');
   });
 
   it('parses "link, explainer" rows — with and without links', () => {

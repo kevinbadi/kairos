@@ -36,7 +36,6 @@ export interface BrandAnswers {
   voiceNever: string;
   emojiPolicy: string;
   hashtagPolicy: string;
-  exampleCaption: string;
   audience: string;
   competitors: string[];
 }

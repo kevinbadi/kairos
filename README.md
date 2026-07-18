@@ -41,6 +41,14 @@ you ▸ schedule the week from content-library/
 
 Everything Kai learns lives in `kairos/` (gitignored): `BRAND.md` (voice, links, audience — every caption flows from it), `PROFILES.md` (account IDs), `kairos.json` (config), `skills/` (playbooks), `knowledge/` (competitor research, tutorials index).
 
+## The dashboard
+
+```bash
+kai dashboard        # or: npm start creatoros dashboard
+```
+
+Mission control for your agent, in the browser (local-only, `127.0.0.1`): every automation and workflow Kairos is running and whether it's live, the comments-to-DM funnel and auto-reply setup, follower growth and recent-post performance, the roadmap of content-marketing workflows coming to this repo — and the same Kai chat, streaming tool calls and all, embedded right in the page.
+
 ## Capability surface
 
 Kai talks to CreatorOS through a typed client with an **endpoint allowlist enforced in code** — not prompt discipline. Anything outside this table returns "that endpoint isn't part of CreatorOS."

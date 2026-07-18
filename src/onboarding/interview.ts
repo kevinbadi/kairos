@@ -324,9 +324,6 @@ async function stepBrand(): Promise<BrandAnswers> {
       { name: 'Aggressive — as many as the platform tolerates', value: 'aggressive' },
     ],
   });
-  const exampleCaption = await askBlock("Paste one example caption you love (yours or anyone's):", {
-    required: true,
-  });
   const audience = await askBlock('Target audience in one sentence:', { required: true });
   const competitors = await askList(
     'Competitor accounts to watch — handles or URLs, up to 5 (empty line to skip):',
@@ -340,7 +337,6 @@ async function stepBrand(): Promise<BrandAnswers> {
     voiceNever: voiceNever.trim(),
     emojiPolicy,
     hashtagPolicy,
-    exampleCaption,
     audience,
     competitors,
   };
