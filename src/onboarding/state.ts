@@ -10,10 +10,12 @@ import { dirname } from 'node:path';
 export const INTERVIEW_STEPS = [
   'brain',
   'mode',
+  // The infrastructure call comes early: everything after initializes
+  // against the chosen environment (Railway worker vs this machine).
+  'pathway',
   'key',
   'brand',
   'profiles',
-  'pathway',
   'finish',
 ] as const;
 
@@ -50,7 +52,16 @@ export interface InterviewState {
     clientLabels?: string[];
     brand?: BrandAnswers;
     profiles?: Array<{ accountId: string; platform: string; username: string }>;
-    pathway?: { automationTarget: 'local' | 'railway'; timezone: string };
+    pathway?: {
+      automationTarget: 'local' | 'railway';
+      timezone: string;
+      /** Railway worker URL once deployed — optional at interview time. */
+      workerUrl?: string;
+      /** Generated for the user; goes into kairos.json + the deploy guide. */
+      workerToken?: string;
+      /** Railway service id for dashboard deploy-status checks. */
+      railwayServiceId?: string;
+    };
   };
 }
 

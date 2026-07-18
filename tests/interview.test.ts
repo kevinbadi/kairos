@@ -12,7 +12,7 @@ import {
   INTERVIEW_STEPS,
   type InterviewState,
 } from '../src/onboarding/state.js';
-import { parseProducts, renderBrandMd, renderProfilesMd, renderSetupPrompt } from '../src/onboarding/render.js';
+import { parseProducts, renderBrandMd, renderProfilesMd, renderRailwayGuide, renderSetupPrompt } from '../src/onboarding/render.js';
 
 async function tmpStatePath(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'kairos-test-'));
@@ -20,13 +20,15 @@ async function tmpStatePath(): Promise<string> {
 }
 
 describe('interview persistence & resume', () => {
-  it('starts with the brain (AI model) when unresolved, then agency-or-creator, then the key', () => {
+  it('starts with the brain, then agency-or-creator, then the INFRASTRUCTURE call before anything else', () => {
     const state = emptyState();
     expect(nextStep(state)).toBe('brain');
     expect(isInterviewComplete(state)).toBe(false);
     markStepDone(state, 'brain');
     expect(nextStep(state)).toBe('mode');
     markStepDone(state, 'mode');
+    expect(nextStep(state)).toBe('pathway');
+    markStepDone(state, 'pathway');
     expect(nextStep(state)).toBe('key');
   });
 
@@ -45,7 +47,7 @@ describe('interview persistence & resume', () => {
     expect(raw).not.toMatch(/sk_[0-9a-f]/i);
     const resumed = await loadState(path);
     expect(resumed.answers.mode).toBe('agency');
-    expect(nextStep(resumed)).toBe('key');
+    expect(nextStep(resumed)).toBe('pathway');
   });
 
   it('persists every step and resumes from the next one', async () => {
@@ -70,16 +72,17 @@ describe('interview persistence & resume', () => {
     // Simulate the process being killed and re-run.
     const resumed = await loadState(path);
     expect(resumed.completed).toEqual(['mode', 'key', 'brain', 'brand']);
-    expect(nextStep(resumed)).toBe('profiles');
+    expect(nextStep(resumed)).toBe('pathway');
     expect(resumed.answers.brand?.products[0]?.link).toBe('https://coach.example/buy');
   });
 
-  it('goes straight from profiles to pathway — no automation setup steps in the form', () => {
+  it('pathway is early (3rd) and no automation setup steps exist in the form', () => {
     expect(INTERVIEW_STEPS).not.toContain('funnel');
     expect(INTERVIEW_STEPS).not.toContain('autoReplies');
+    expect(INTERVIEW_STEPS.indexOf('pathway')).toBe(2);
     const state = emptyState();
-    for (const step of ['brain', 'mode', 'key', 'brand', 'profiles'] as const) markStepDone(state, step);
-    expect(nextStep(state)).toBe('pathway');
+    for (const step of ['brain', 'mode', 'pathway', 'key', 'brand', 'profiles'] as const) markStepDone(state, step);
+    expect(nextStep(state)).toBe('finish');
   });
 
   it('is complete only after every step, in the spec order', () => {
@@ -161,6 +164,30 @@ describe('brand pack rendering', () => {
     // no automation is described as already-decided
     expect(prompt).not.toMatch(/create the comment-to-DM funnel/i);
     expect(prompt).not.toMatch(/starter crons I still need/);
+  });
+
+  it('a railway pathway without a deployed worker adds the deploy walkthrough task', () => {
+    const withoutWorker = renderSetupPrompt({
+      completed: [],
+      answers: { pathway: { automationTarget: 'railway', timezone: 'America/Toronto', workerToken: 'tok' } },
+    });
+    expect(withoutWorker).toContain('kairos/RAILWAY.md');
+    expect(withoutWorker).toContain('worker.url');
+    const withWorker = renderSetupPrompt({
+      completed: [],
+      answers: { pathway: { automationTarget: 'railway', timezone: 'America/Toronto', workerUrl: 'https://w.up.railway.app' } },
+    });
+    expect(withWorker).not.toContain('kairos/RAILWAY.md');
+  });
+
+  it('the Railway guide ships with every value pre-filled', () => {
+    const guide = renderRailwayGuide({ timezone: 'America/Toronto', workerToken: 'abc123token' });
+    expect(guide).toContain('Dockerfile.worker');
+    expect(guide).toContain('abc123token');
+    expect(guide).toContain('America/Toronto');
+    expect(guide).toContain('KAIROS_WORKER_TOKEN');
+    expect(guide).toContain('spend limit');
+    expect(guide).not.toMatch(/sk_[0-9a-f]/i); // never a real key in a file
   });
 
   it('renders the profile map with account IDs', () => {

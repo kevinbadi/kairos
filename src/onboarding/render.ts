@@ -104,6 +104,50 @@ Adding a tutorial is a one-line edit: \`- [Title](URL) — what it teaches\`.
 }
 
 /**
+ * The Railway deploy guide, written the moment the user picks the Railway
+ * pathway — every value they need is filled in (worker token generated,
+ * timezone from their answer), so the deploy is copy-paste.
+ */
+export function renderRailwayGuide(opts: { timezone: string; workerToken: string }): string {
+  return `# Deploy the Kairos worker on Railway
+
+One always-on service runs ALL your automations — your machine can be off.
+Ten minutes, one time. Every value below is already filled in for you.
+
+## 1. Create the service
+
+1. railway.app → New Project → Deploy from GitHub repo → pick this repo.
+2. Service settings → Build → set **Dockerfile Path** to \`Dockerfile.worker\`.
+
+## 2. Set the environment variables (Service → Variables)
+
+| Variable | Value |
+|---|---|
+| \`CREATOROS_API_KEY\` | your CreatorOS API key (CreatorOS app → Settings → API Key) |
+| \`ANTHROPIC_API_KEY\` | your Anthropic key — OR use \`CLAUDE_CODE_OAUTH_TOKEN\` from \`claude setup-token\` to stay on your Claude plan |
+| \`KAIROS_WORKER_TOKEN\` | \`${opts.workerToken}\` (generated for you — already saved in kairos.json) |
+| \`TZ\` | \`${opts.timezone}\` (so "9am" means YOUR 9am) |
+
+⚠ BEFORE the first deploy: set a spend limit at console.anthropic.com → Billing → Limits.
+The worker runs an agent unattended — an uncapped key is an uncapped bill.
+
+## 3. Expose and connect it
+
+1. Service → Settings → Networking → **Generate Domain**.
+2. Tell Kai in chat: "my worker is live at https://<that-domain>" — or paste it
+   into \`kairos/kairos.json\` under \`worker.url\` yourself.
+3. Optional, for deploy status on the dashboard: set \`RAILWAY_API_TOKEN\` in the
+   dashboard's environment and put the service id in \`kairos.json\` → \`railway.serviceId\`.
+
+## 4. Verify
+
+Open the dashboard's Automations page — the "▲ Railway worker" strip should read
+**up · on schedule**. Automations you create in chat land in \`kairos/automations.json\`;
+the worker picks up changes within 30 seconds, no redeploy needed.
+`;
+}
+
+/**
  * The prompt the user hands their AI agent to actually get everything set
  * up — every task traces back to a questionnaire answer already
  * materialized in kairos/. Printed at the finish and saved to
@@ -115,8 +159,15 @@ export function renderSetupPrompt(state: InterviewState): string {
 
   const tasks: string[] = [
     'Verify every connected account is healthy (account_health) and flag anything that needs a reconnect.',
-    `Onboarding set up ZERO automations on purpose — I pick my own set. Walk me through the menu one item at a time and ask what I want: auto-replies to comments and DMs (with a persona I define), comments-to-DM funnels, scheduled content posting, recurring analytics reports. Set up ONLY what I approve on the ${pathway?.automationTarget ?? 'local'} pathway, confirm exact copy with me before anything goes live, save the choices to kairos/kairos.json, and verify with list_funnels / list_cron_automations. "None for now" is a valid answer — don't push.`,
   ];
+  if (pathway?.automationTarget === 'railway' && !pathway.workerUrl) {
+    tasks.push(
+      'My Railway worker is not deployed yet. Walk me through kairos/RAILWAY.md step by step when I am ready, and once I give you the service URL, save it to kairos/kairos.json under worker.url.',
+    );
+  }
+  tasks.push(
+    `Onboarding set up ZERO automations on purpose — I pick my own set. Walk me through the menu one item at a time and ask what I want: auto-replies to comments and DMs (with a persona I define), comments-to-DM funnels, scheduled content posting, recurring analytics reports. Set up ONLY what I approve on the ${pathway?.automationTarget ?? 'local'} pathway, confirm exact copy with me before anything goes live, save the choices to kairos/kairos.json, and verify with list_funnels / list_cron_automations. "None for now" is a valid answer — don't push.`,
+  );
   if (competitors.length > 0) {
     tasks.push(
       `Research my competitors (${competitors.join(', ')}) — content mix, cadence, hooks, gaps — and write kairos/knowledge/COMPETITORS.md.`,
@@ -152,7 +203,13 @@ export function renderSetupSummary(state: InterviewState): string {
     'Automations: none yet, by design — pick yours in chat (auto-replies, comments-to-DM funnels, scheduled posting, analytics reports).',
   );
   if (pathway) {
-    lines.push(`Automation pathway: ${pathway.automationTarget} (${pathway.timezone}) — ready when you are.`);
+    const workerNote =
+      pathway.automationTarget === 'railway'
+        ? pathway.workerUrl
+          ? ` — worker connected at ${pathway.workerUrl}`
+          : ' — worker not deployed yet; kairos/RAILWAY.md has the 10-minute guide'
+        : '';
+    lines.push(`Automation pathway: ${pathway.automationTarget} (${pathway.timezone})${workerNote}.`);
   }
   return lines.join('\n');
 }
