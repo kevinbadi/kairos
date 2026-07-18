@@ -66,6 +66,39 @@ export default {
       );
     };
 
+    /* ---- Railway worker status strip ---- */
+    const untilShort = (iso) => {
+      const ms = new Date(iso).getTime() - Date.now();
+      if (!Number.isFinite(ms)) return '';
+      if (ms <= 0) return 'now';
+      const m = Math.round(ms / 60000);
+      return m < 60 ? `in ${m}m` : m < 1440 ? `in ${Math.round(m / 60)}h` : `in ${Math.round(m / 1440)}d`;
+    };
+    if (data.worker && data.worker.configured) {
+      const w = data.worker;
+      const broken = w.deploy && w.deploy.broken;
+      const state = broken || !w.reachable ? 'failed' : 'sent';
+      const label = broken
+        ? `deploy ${w.deploy.status.toLowerCase()}`
+        : w.reachable
+          ? (w.running ? `up · running ${w.running}` : 'up · on schedule')
+          : 'unreachable — check the Railway service';
+      const nexts = (w.automations || [])
+        .filter((a) => a.enabled && a.nextRun)
+        .sort((a, b) => (a.nextRun < b.nextRun ? -1 : 1))
+        .slice(0, 3)
+        .map((a) => `${a.name} ${untilShort(a.nextRun)}`);
+      root.append(
+        h('div', { class: 'card-solid', style: 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px' },
+          dot(state),
+          h('span', { class: 'flow-name' }, '▲ Railway worker'),
+          badge(label, state),
+          w.deploy && !broken ? badge(`deploy ${w.deploy.status.toLowerCase()}`, 'sent') : null,
+          nexts.length ? h('span', { class: 'num', style: 'color:var(--text-3);font-size:12.5px' }, `next: ${nexts.join(' · ')}`) : null,
+        ),
+      );
+    }
+
     const flowsWrap = h('div', {});
     const renderFlows = (flows) => {
       flowsWrap.replaceChildren(
@@ -90,7 +123,7 @@ export default {
               h('span', { class: 'what' }, r.action),
               h('span', { class: 'meta' }, [r.flow, r.platform, r.target].filter(Boolean).join(' · ')),
               h('span', { class: `origin-badge${r.origin === 'cloud' ? ' cloud' : ''}`, style: 'font-size:9.5px' },
-                r.origin === 'cloud' ? '☁' : '⌂'),
+                r.origin === 'cloud' ? '☁' : r.origin === 'railway' ? '▲' : '⌂'),
               badge(r.outcome, r.outcome),
               r.error ? h('span', { class: 'meta', style: 'flex-basis:100%;padding-left:86px;color:var(--text-2)' }, r.error) : null,
             )))

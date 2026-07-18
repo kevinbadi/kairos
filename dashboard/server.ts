@@ -36,6 +36,14 @@ import type { BrainConfig } from '../src/util/brain.js';
 import { buildSystemPrompt } from '../src/agent/systemPrompt.js';
 import { buildToolServer } from '../src/agent/tools.js';
 import { verifyAutomations } from '../src/automations/crons.js';
+import { loadWorkerAutomations } from '../src/worker/automations.js';
+import {
+  fetchWorkerState,
+  workerCronFlows,
+  workerFlowRuns,
+  type WorkerState,
+} from '../src/dashboard/worker.js';
+import { deployLooksBroken, fetchRailwayDeploy, type RailwayDeployStatus } from '../src/dashboard/railway.js';
 import { workflowCatalog } from '../src/dashboard/workflows.js';
 import { parseBrandMd, deriveKpis, describeObjective, MISSION_PILLARS } from '../src/dashboard/understanding.js';
 import {
@@ -187,6 +195,25 @@ async function healthPayload(session: Session): Promise<unknown> {
 
 let cronListCache: { at: number; output: string; ok: boolean } | null = null;
 let cloudCache: { at: number; funnels: LiveFunnel[]; statsById: Map<string, FlowStats>; runs: FlowRun[] } | null = null;
+let workerCache: { at: number; state: WorkerState } | null = null;
+let railwayCache: { at: number; deploy: RailwayDeployStatus | null } | null = null;
+
+/** Worker status — env overrides config so secrets can stay out of files. */
+async function fetchWorkerCached(config: KairosConfig | null): Promise<WorkerState> {
+  if (workerCache && Date.now() - workerCache.at < 15_000) return workerCache.state;
+  const url = process.env.KAIROS_WORKER_URL ?? config?.worker?.url;
+  const token = process.env.KAIROS_WORKER_TOKEN ?? config?.worker?.token;
+  const state = await fetchWorkerState(url, token);
+  workerCache = { at: Date.now(), state };
+  return state;
+}
+
+async function fetchRailwayCached(config: KairosConfig | null): Promise<RailwayDeployStatus | null> {
+  if (railwayCache && Date.now() - railwayCache.at < 60_000) return railwayCache.deploy;
+  const deploy = await fetchRailwayDeploy(process.env.RAILWAY_API_TOKEN, config?.railway?.serviceId);
+  railwayCache = { at: Date.now(), deploy };
+  return deploy;
+}
 
 /** The CreatorOS API's list/log shapes are parsed defensively — a field
  * rename upstream degrades to "no data", never to a crash. */
@@ -267,15 +294,19 @@ async function automationsPayload(session: Session): Promise<unknown> {
   const entries = await readActivity(session.workspaceRoot);
 
   if (!cronListCache || Date.now() - cronListCache.at > 30_000) {
-    const result = await verifyAutomations(session.workspaceRoot);
+    const result = await verifyAutomations(session.workspaceRoot, config?.automationTarget ?? 'local');
     cronListCache = { at: Date.now(), output: result.stdout.trim() || result.stderr.trim(), ok: result.code === 0 };
   }
   const cloud = await fetchCloudState(session);
+  const workerAutomations = await loadWorkerAutomations(session.workspaceRoot);
+  const worker = await fetchWorkerCached(config);
+  const deploy = await fetchRailwayCached(config);
 
   const flows = [
     ...funnelFlows(config, cloud.funnels, cloud.statsById),
     ...engagementFlows(config, entries),
     ...cronFlows(cronListCache.ok ? cronListCache.output : '', config, entries),
+    ...workerCronFlows(workerAutomations, worker.runs),
   ];
 
   // Local runs come from the agent's activity log (workflows, not chat-only
@@ -294,9 +325,16 @@ async function automationsPayload(session: Session): Promise<unknown> {
   return {
     connected: session.client !== null,
     flows,
-    runs: mergeRuns(localRuns, cloud.runs),
+    runs: mergeRuns(localRuns, [...cloud.runs, ...workerFlowRuns(worker.runs)]),
     crons: { ok: cronListCache.ok, output: cronListCache.output },
     catalog: workflowCatalog(cronListCache.ok ? cronListCache.output : ''),
+    worker: {
+      configured: worker.configured || workerAutomations.length > 0,
+      reachable: worker.reachable,
+      running: worker.health?.running ?? null,
+      automations: worker.health?.automations ?? [],
+      deploy: deploy ? { ...deploy, broken: deployLooksBroken(deploy.status) } : null,
+    },
   };
 }
 
