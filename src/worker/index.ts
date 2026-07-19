@@ -153,7 +153,7 @@ async function main(): Promise<void> {
   const token = process.env.KAIROS_WORKER_TOKEN;
   if (!token) console.warn('worker: KAIROS_WORKER_TOKEN not set — /health and /runs are unauthenticated.');
   const port = Number(process.env.PORT ?? 8790);
-  createWorkerServer({ token, getHealth, store }).listen(port, () => {
+  createWorkerServer({ token, getHealth, store, workspaceRoot: root }).listen(port, () => {
     console.log(`kairos-worker up on :${port} — ${automations.filter((a) => a.enabled).length} automation(s) scheduled.`);
   });
 }

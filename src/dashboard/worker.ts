@@ -7,6 +7,7 @@
 import type { RunRecord } from '../storage/store.js';
 import type { WorkerHealth } from '../worker/server.js';
 import type { WorkerAutomation } from '../worker/automations.js';
+import type { ActivityEntry } from '../util/activityLog.js';
 import { EMPTY_STATS, flowHealth, type Flow, type FlowRun, type FlowStats } from './flows.js';
 import { describeSchedule } from './workflows.js';
 
@@ -15,6 +16,8 @@ export interface WorkerState {
   reachable: boolean;
   health: WorkerHealth | null;
   runs: RunRecord[];
+  /** The worker's per-action activity log — merged into the overview. */
+  activity: ActivityEntry[];
 }
 
 export async function fetchWorkerState(
@@ -22,20 +25,26 @@ export async function fetchWorkerState(
   token: string | undefined,
   fetchImpl: typeof fetch = fetch,
 ): Promise<WorkerState> {
-  if (!url) return { configured: false, reachable: false, health: null, runs: [] };
+  if (!url) return { configured: false, reachable: false, health: null, runs: [], activity: [] };
   const base = url.replace(/\/+$/, '');
   const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
   try {
-    const [healthRes, runsRes] = await Promise.all([
+    const [healthRes, runsRes, activityRes] = await Promise.all([
       fetchImpl(`${base}/health`, { headers }),
       fetchImpl(`${base}/runs?limit=60`, { headers }),
+      fetchImpl(`${base}/activity?limit=1000`, { headers }).catch(() => null),
     ]);
-    if (!healthRes.ok || !runsRes.ok) return { configured: true, reachable: false, health: null, runs: [] };
+    if (!healthRes.ok || !runsRes.ok) return { configured: true, reachable: false, health: null, runs: [], activity: [] };
     const health = (await healthRes.json()) as WorkerHealth;
     const runsBody = (await runsRes.json()) as { runs?: RunRecord[] };
-    return { configured: true, reachable: true, health, runs: Array.isArray(runsBody.runs) ? runsBody.runs : [] };
+    let activity: ActivityEntry[] = [];
+    if (activityRes?.ok) {
+      const body = (await activityRes.json()) as { entries?: ActivityEntry[] };
+      if (Array.isArray(body.entries)) activity = body.entries;
+    }
+    return { configured: true, reachable: true, health, runs: Array.isArray(runsBody.runs) ? runsBody.runs : [], activity };
   } catch {
-    return { configured: true, reachable: false, health: null, runs: [] };
+    return { configured: true, reachable: false, health: null, runs: [], activity: [] };
   }
 }
 

@@ -49,6 +49,60 @@ export interface ActivityFilter {
   limit?: number;
 }
 
+/**
+ * Workspace admin — creating crons/webhooks/funnels, editing config. Real
+ * agent work for the raw Logs page, but NOT audience-facing activity: the
+ * overview's counters, heatmap, and live feed track replies/DMs/posts,
+ * not setup.
+ */
+const SETUP_ACTIONS = new Set([
+  'create_cron_automation',
+  'delete_cron_automation',
+  'create_webhook',
+  'delete_webhook',
+  'test_webhook',
+  'create_funnel',
+  'update_funnel',
+  'delete_funnel',
+  'update_account',
+  'update_profile',
+]);
+
+export function isSetupAction(action: string): boolean {
+  return SETUP_ACTIONS.has(action);
+}
+
+/** Apply an ActivityFilter to already-loaded entries (newest first). */
+export function filterActivity(entries: ActivityEntry[], filter: ActivityFilter = {}): ActivityEntry[] {
+  const filtered = entries.filter(
+    (e) =>
+      (!filter.workflow || e.workflow === filter.workflow) &&
+      (!filter.platform || e.platform === filter.platform) &&
+      (!filter.outcome || e.outcome === filter.outcome),
+  );
+  return filter.limit ? filtered.slice(0, filter.limit) : filtered;
+}
+
+/**
+ * Merge activity from several sources (local log + the Railway worker's),
+ * newest first, deduped — a local worker sharing this workspace would
+ * otherwise double every entry.
+ */
+export function mergeActivity(...sources: ActivityEntry[][]): ActivityEntry[] {
+  const seen = new Set<string>();
+  const merged: ActivityEntry[] = [];
+  for (const entries of sources) {
+    for (const entry of entries) {
+      const key = `${entry.ts}|${entry.action}|${entry.workflow}|${entry.target ?? ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(entry);
+    }
+  }
+  merged.sort((a, b) => (a.ts < b.ts ? 1 : -1));
+  return merged;
+}
+
 /** Read entries, newest first. Corrupt lines are skipped. */
 export async function readActivity(
   workspaceRoot: string,
@@ -73,13 +127,7 @@ export async function readActivity(
     }
   }
   entries.reverse(); // newest first
-  const filtered = entries.filter(
-    (e) =>
-      (!filter.workflow || e.workflow === filter.workflow) &&
-      (!filter.platform || e.platform === filter.platform) &&
-      (!filter.outcome || e.outcome === filter.outcome),
-  );
-  return filter.limit ? filtered.slice(0, filter.limit) : filtered;
+  return filterActivity(entries, filter);
 }
 
 export interface ActivitySummary {
@@ -122,6 +170,9 @@ export function summarizeActivity(entries: ActivityEntry[], now: Date = new Date
   for (const entry of entries) {
     const ts = Date.parse(entry.ts);
     if (Number.isNaN(ts)) continue;
+    // Setup/admin actions never count as agent activity — the overview
+    // tracks audience-facing work (replies, DMs, posts), not "create cron".
+    if (isSetupAction(entry.action)) continue;
     workflows.add(entry.workflow);
     if (entry.platform) platforms.add(entry.platform);
 

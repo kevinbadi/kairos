@@ -14,7 +14,7 @@ export default {
     // degrades on its own: a failure becomes {error} for an inline card.
     const [health, activity] = await Promise.all([
       api('/api/health').catch((e) => ({ error: e.message })),
-      api('/api/activity?limit=25').catch((e) => ({ error: e.message })),
+      api('/api/activity?limit=25&kind=engagement').catch((e) => ({ error: e.message })),
     ]);
     return { health, activity };
   },
@@ -82,7 +82,7 @@ export default {
     );
 
     const hint = note('feed-hint',
-      'This feed is the agent’s structured log (logs/activity.jsonl) — every reply, DM, and post it takes, newest first. The Logs page has filters and raw payloads.');
+      'This feed is the agent’s audience-facing work — every reply, DM, and post, newest first, merged from this machine AND the Railway worker. Setup actions (creating automations, webhooks) live on the Logs page with filters and raw payloads.');
     if (hint) root.append(h('div', { style: 'margin-top:16px' }, hint));
 
     /* ---- live feed, auto-refreshing ---- */
@@ -107,7 +107,7 @@ export default {
     // Poll while this page is on screen; the interval kills itself on nav.
     const timer = setInterval(async () => {
       if (!feedCard.isConnected) { clearInterval(timer); return; }
-      try { renderFeed((await api('/api/activity?limit=25')).entries); } catch { /* keep the last view */ }
+      try { renderFeed((await api('/api/activity?limit=25&kind=engagement')).entries); } catch { /* keep the last view */ }
     }, 5000);
   },
 };

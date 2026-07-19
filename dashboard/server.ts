@@ -56,7 +56,14 @@ import {
   type FlowStats,
   type LiveFunnel,
 } from '../src/dashboard/flows.js';
-import { readActivity, summarizeActivity } from '../src/util/activityLog.js';
+import {
+  filterActivity,
+  isSetupAction,
+  mergeActivity,
+  readActivity,
+  summarizeActivity,
+  type ActivityEntry,
+} from '../src/util/activityLog.js';
 import { kairosPaths } from '../src/paths.js';
 import { sanitize } from '../src/util/sanitize.js';
 
@@ -167,7 +174,7 @@ async function healthPayload(session: Session): Promise<unknown> {
     fileInfo('profiles', paths.profilesMd),
   ]);
 
-  const entries = await readActivity(session.workspaceRoot, { limit: 1 });
+  const entries = await allActivity(session);
   const lastAction = entries[0] ?? null;
   const automationsOn = Boolean(
     session.config?.funnel?.enabled ||
@@ -199,6 +206,18 @@ let cronListCache: { at: number; output: string; ok: boolean } | null = null;
 let cloudCache: { at: number; funnels: LiveFunnel[]; statsById: Map<string, FlowStats>; runs: FlowRun[] } | null = null;
 let workerCache: { at: number; state: WorkerState } | null = null;
 let railwayCache: { at: number; deploy: RailwayDeployStatus | null } | null = null;
+
+/**
+ * ALL agent activity, one stream: the local log merged with the Railway
+ * worker's (its replies/DMs/posts happen in the container — invisible to
+ * local files). This is what the overview heatmap and counters read, so
+ * cloud automations light them up the same as local ones.
+ */
+async function allActivity(session: Session): Promise<ActivityEntry[]> {
+  const local = await readActivity(session.workspaceRoot);
+  const worker = await fetchWorkerCached(session.config);
+  return worker.activity.length ? mergeActivity(local, worker.activity) : local;
+}
 
 /** Worker status — env overrides config so secrets can stay out of files. */
 async function fetchWorkerCached(config: KairosConfig | null): Promise<WorkerState> {
@@ -300,7 +319,7 @@ async function fetchCloudState(session: Session): Promise<NonNullable<typeof clo
 
 async function automationsPayload(session: Session): Promise<unknown> {
   const config = session.config;
-  const entries = await readActivity(session.workspaceRoot);
+  const entries = await allActivity(session);
 
   if (!cronListCache || Date.now() - cronListCache.at > 30_000) {
     const result = await verifyAutomations(session.workspaceRoot, config?.automationTarget ?? 'local');
@@ -361,7 +380,7 @@ async function automationsPayload(session: Session): Promise<unknown> {
 async function understandingPayload(session: Session): Promise<unknown> {
   const paths = kairosPaths(session.workspaceRoot);
   const config = session.config;
-  const summary = summarizeActivity(await readActivity(session.workspaceRoot));
+  const summary = summarizeActivity(await allActivity(session));
 
   let brand: ReturnType<typeof parseBrandMd> | null = null;
   let brandMeta: { path: string; mtime: string } | null = null;
@@ -465,7 +484,7 @@ async function workflowFilesPayload(session: Session): Promise<unknown> {
   const roots = existsSync(paths.skillsDir)
     ? [{ dir: paths.skillsDir, source: 'installed' }]
     : [{ dir: join(REPO_ROOT, 'templates', 'skills'), source: 'template' }];
-  const summary = summarizeActivity(await readActivity(session.workspaceRoot));
+  const summary = summarizeActivity(await allActivity(session));
 
   const files: unknown[] = [];
   for (const root of roots) {
@@ -645,9 +664,13 @@ export async function startDashboard(
           outcome: url.searchParams.get('outcome') ?? undefined,
           limit: Number(url.searchParams.get('limit')) || 200,
         };
-        const all = await readActivity(session.workspaceRoot);
+        // kind=engagement: audience-facing actions only — the overview's
+        // live feed; setup actions (create cron etc.) stay on the Logs page.
+        const engagementOnly = url.searchParams.get('kind') === 'engagement';
+        const all = await allActivity(session);
+        const scoped = engagementOnly ? all.filter((e) => !isSetupAction(e.action)) : all;
         return json(res, 200, {
-          entries: (await readActivity(session.workspaceRoot, filter)).slice(0, filter.limit),
+          entries: filterActivity(scoped, filter),
           summary: summarizeActivity(all),
         });
       }

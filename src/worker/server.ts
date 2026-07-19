@@ -4,11 +4,14 @@
  * the dashboard needs "is it alive, what ran, what failed" and nothing
  * else.
  *
- *   GET /health  service, uptime, schedule with next-run times, current run
- *   GET /runs    run journal, newest first (?automation=&status=&limit=)
+ *   GET /health    service, uptime, schedule with next-run times, current run
+ *   GET /runs      run journal, newest first (?automation=&status=&limit=)
+ *   GET /activity  the worker's per-action log (replies, DMs, posts) — the
+ *                  dashboard merges it into the overview heatmap/counters
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { KairosStore, RunStatus } from '../storage/store.js';
+import { readActivity } from '../util/activityLog.js';
 
 export interface WorkerHealth {
   service: 'kairos-worker';
@@ -30,6 +33,8 @@ export interface WorkerServerOptions {
   token?: string;
   getHealth: () => WorkerHealth;
   store: KairosStore;
+  /** Where the worker's logs/activity.jsonl lives — served on /activity. */
+  workspaceRoot: string;
 }
 
 export function authorized(req: IncomingMessage, token: string | undefined): boolean {
@@ -46,6 +51,13 @@ async function handle(req: IncomingMessage, res: ServerResponse, opts: WorkerSer
   const url = new URL(req.url ?? '/', 'http://worker');
   if (req.method !== 'GET') return json(405, { error: 'method not allowed' });
   if (url.pathname === '/health') return json(200, opts.getHealth());
+  if (url.pathname === '/activity') {
+    const limitRaw = Number(url.searchParams.get('limit') ?? 400);
+    const entries = await readActivity(opts.workspaceRoot, {
+      limit: Number.isFinite(limitRaw) ? Math.min(Math.max(1, limitRaw), 2000) : 400,
+    });
+    return json(200, { entries });
+  }
   if (url.pathname === '/runs') {
     const limitRaw = Number(url.searchParams.get('limit') ?? 50);
     const runs = await opts.store.listRuns({
