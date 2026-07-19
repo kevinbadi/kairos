@@ -78,7 +78,11 @@ export default {
         stat(s.today.skipped, 'skipped today', `${s.week.skipped} this week`),
         stat(s.today.failed, 'failed today', `${s.week.failed} this week`),
       ),
-      card('Agent activity — last 12 months', heatmap(s.heatmap)),
+      card(
+        activity.source === 'railway'
+          ? 'Agent activity — last 12 months · ▲ Railway worker'
+          : 'Agent activity — last 12 months',
+        heatmap(s.heatmap)),
     );
 
     const hint = note('feed-hint',

@@ -174,7 +174,7 @@ async function healthPayload(session: Session): Promise<unknown> {
     fileInfo('profiles', paths.profilesMd),
   ]);
 
-  const entries = await allActivity(session);
+  const { entries } = await allActivity(session);
   const lastAction = entries[0] ?? null;
   const automationsOn = Boolean(
     session.config?.funnel?.enabled ||
@@ -208,15 +208,22 @@ let workerCache: { at: number; state: WorkerState } | null = null;
 let railwayCache: { at: number; deploy: RailwayDeployStatus | null } | null = null;
 
 /**
- * ALL agent activity, one stream: the local log merged with the Railway
- * worker's (its replies/DMs/posts happen in the container — invisible to
- * local files). This is what the overview heatmap and counters read, so
- * cloud automations light them up the same as local ones.
+ * ALL agent activity, one stream. On the Railway pathway the WORKER's log
+ * is the primary source — that's where automations actually run — with
+ * this machine's chat-session actions merged in behind it. Local logs are
+ * only the primary source on the local pathway or when no worker exists.
  */
-async function allActivity(session: Session): Promise<ActivityEntry[]> {
+async function allActivity(session: Session): Promise<{ entries: ActivityEntry[]; source: 'railway' | 'local' }> {
   const local = await readActivity(session.workspaceRoot);
   const worker = await fetchWorkerCached(session.config);
-  return worker.activity.length ? mergeActivity(local, worker.activity) : local;
+  const railwayPrimary = session.config?.automationTarget === 'railway' && worker.reachable;
+  if (railwayPrimary) {
+    return { entries: mergeActivity(worker.activity, local), source: 'railway' };
+  }
+  return {
+    entries: worker.activity.length ? mergeActivity(local, worker.activity) : local,
+    source: 'local',
+  };
 }
 
 /** Worker status — env overrides config so secrets can stay out of files. */
@@ -319,7 +326,7 @@ async function fetchCloudState(session: Session): Promise<NonNullable<typeof clo
 
 async function automationsPayload(session: Session): Promise<unknown> {
   const config = session.config;
-  const entries = await allActivity(session);
+  const { entries } = await allActivity(session);
 
   if (!cronListCache || Date.now() - cronListCache.at > 30_000) {
     const result = await verifyAutomations(session.workspaceRoot, config?.automationTarget ?? 'local');
@@ -380,7 +387,7 @@ async function automationsPayload(session: Session): Promise<unknown> {
 async function understandingPayload(session: Session): Promise<unknown> {
   const paths = kairosPaths(session.workspaceRoot);
   const config = session.config;
-  const summary = summarizeActivity(await allActivity(session));
+  const summary = summarizeActivity((await allActivity(session)).entries);
 
   let brand: ReturnType<typeof parseBrandMd> | null = null;
   let brandMeta: { path: string; mtime: string } | null = null;
@@ -484,7 +491,7 @@ async function workflowFilesPayload(session: Session): Promise<unknown> {
   const roots = existsSync(paths.skillsDir)
     ? [{ dir: paths.skillsDir, source: 'installed' }]
     : [{ dir: join(REPO_ROOT, 'templates', 'skills'), source: 'template' }];
-  const summary = summarizeActivity(await allActivity(session));
+  const summary = summarizeActivity((await allActivity(session)).entries);
 
   const files: unknown[] = [];
   for (const root of roots) {
@@ -667,11 +674,12 @@ export async function startDashboard(
         // kind=engagement: audience-facing actions only — the overview's
         // live feed; setup actions (create cron etc.) stay on the Logs page.
         const engagementOnly = url.searchParams.get('kind') === 'engagement';
-        const all = await allActivity(session);
+        const { entries: all, source } = await allActivity(session);
         const scoped = engagementOnly ? all.filter((e) => !isSetupAction(e.action)) : all;
         return json(res, 200, {
           entries: filterActivity(scoped, filter),
           summary: summarizeActivity(all),
+          source,
         });
       }
       if (route === 'GET /api/automations') return json(res, 200, await automationsPayload(session));
