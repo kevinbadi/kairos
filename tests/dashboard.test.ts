@@ -291,7 +291,7 @@ describe('dashboard UI shell', () => {
     expect(css).toContain('--accent: #22d3ee');
     expect(css).toContain("html[data-theme='light']");
     expect(css).toContain('#0b1220');
-    for (const panel of ['overview', 'understanding', 'automations', 'brand', 'training', 'logs', 'chat']) {
+    for (const panel of ['overview', 'understanding', 'automations', 'content', 'brand', 'training', 'logs', 'chat']) {
       expect(registry).toContain(`./${panel}.js`);
     }
   });

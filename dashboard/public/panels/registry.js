@@ -8,9 +8,10 @@
 import overview from './overview.js';
 import understanding from './understanding.js';
 import automations from './automations.js';
+import content from './content.js';
 import brand from './brand.js';
 import training from './training.js';
 import logs from './logs.js';
 import chat from './chat.js';
 
-export const panels = [overview, understanding, automations, brand, training, logs, chat];
+export const panels = [overview, understanding, automations, content, brand, training, logs, chat];
