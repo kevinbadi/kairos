@@ -427,7 +427,7 @@ async function stepPathway(state: InterviewState, paths: KairosPaths): Promise<v
         ...(envKey ? [{ name: `Use the Anthropic key already in this shell (${maskKey(envKey)})`, value: 'env' as const }] : []),
         { name: 'Anthropic API key (pay per use)', value: 'anthropic' as const },
         { name: 'Claude plan token — run `claude setup-token` in another terminal (no separate bill, rides your Pro/Max plan)', value: 'oauth' as const },
-        { name: "Skip for now — I'll ask for it in chat before anything deploys", value: 'skip' as const },
+        { name: "Skip for now — the environment still deploys at the end of setup; the worker idles until you hand me a key in chat", value: 'skip' as const },
       ],
     });
     if (aiChoice === 'env' && envKey) {
@@ -483,7 +483,7 @@ async function stepPathway(state: InterviewState, paths: KairosPaths): Promise<v
     await writeFile(join(paths.kairosDir, 'RAILWAY.md'), renderRailwayGuide({ timezone, workerToken: workerToken! }), 'utf8');
     say(
       railwayApiToken
-        ? `Everything on my side is staged: worker auth token generated, deploy plan written to kairos/RAILWAY.md as the reference. In our first chat, say "build my Railway worker" and I'll provision it end to end.
+        ? `Everything on my side is staged: worker auth token generated, deploy plan written to kairos/RAILWAY.md as the reference. The deploy runs AUTOMATICALLY at the end of this setup — a few more questions and you'll watch it build.
 
 Once it's live: automations you pick in chat land in kairos/automations.json, and I ship changes to the worker with a quick sync each time — you never touch Railway again.`
         : `Everything I can do without you is done: your worker auth token is generated and the full deploy guide is at kairos/RAILWAY.md — every value pre-filled, ~10 minutes of copy-paste on railway.app. (Shortcut: paste a Railway API token in chat any time and I'll do the whole deploy for you.)
@@ -521,13 +521,15 @@ async function stepFinish(
     pathway.automationTarget === 'railway' &&
     !pathway.workerUrl &&
     pathway.railwayTokenSaved &&
-    pathway.aiCredentialSaved &&
     pathway.workerToken
   ) {
     const railwayToken = await resolveRailwayToken();
-    const ai = await resolveWorkerAiCredential();
     const creatorosKey = await resolveApiKey();
-    if (railwayToken && ai && creatorosKey) {
+    if (railwayToken && creatorosKey) {
+      // The environment ALWAYS deploys at the end of onboarding — no
+      // automations required, no AI credential required. A missing brain
+      // key just means the worker idles until it's handed over in chat.
+      const ai = (await resolveWorkerAiCredential()) ?? null;
       say('Building your Railway environment now — sit back, this is the part you never have to do.');
       const result = await provisionRailwayWorker(
         {
@@ -548,6 +550,15 @@ async function stepFinish(
             ? `Railway worker is LIVE at ${result.url} — /health verified. Automations you pick in chat run in the cloud from now on.`
             : `Railway accepted the deploy — the worker is building and will come up at ${result.url}. The dashboard's Automations page shows it the moment it's live.`,
         );
+        if (!ai) {
+          say(
+            'One thing missing: the worker has no AI key yet, so it idles (alive, but not thinking). Hand me one in chat — an Anthropic API key or a `claude setup-token` token — and I install it in seconds, no redeploy.',
+          );
+        } else if (ai.kind === 'ANTHROPIC_API_KEY') {
+          say(
+            '⚠ That key bills per use and the worker runs unattended — if you haven\'t already, set a spend limit at console.anthropic.com → Billing → Limits.',
+          );
+        }
       } else {
         say(
           `Provisioning hit a wall (${result.error}). No stress — everything is saved; say "build my Railway worker" in our chat and I'll pick it up from the failed step.`,

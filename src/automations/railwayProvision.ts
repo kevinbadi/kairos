@@ -25,7 +25,9 @@ export interface ProvisionInputs {
   timezone: string;
   workerToken: string;
   creatorosKey: string;
-  ai: { kind: 'ANTHROPIC_API_KEY' | 'CLAUDE_CODE_OAUTH_TOKEN'; value: string };
+  /** The worker's brain. Optional — the environment deploys without it
+   * (boots, serves /health, idles) and the key is installed later from chat. */
+  ai?: { kind: 'ANTHROPIC_API_KEY' | 'CLAUDE_CODE_OAUTH_TOKEN'; value: string } | null;
   projectName?: string;
   /** Health-poll tuning — defaults suit a real Railway build; tests shrink them. */
   healthAttempts?: number;
@@ -46,7 +48,7 @@ export function provisionVariableArgs(inputs: ProvisionInputs): string[] {
   return [
     'variables',
     '--set', `CREATOROS_API_KEY=${inputs.creatorosKey}`,
-    '--set', `${inputs.ai.kind}=${inputs.ai.value}`,
+    ...(inputs.ai ? ['--set', `${inputs.ai.kind}=${inputs.ai.value}`] : []),
     '--set', `KAIROS_WORKER_TOKEN=${inputs.workerToken}`,
     '--set', `TZ=${inputs.timezone}`,
     '--set', 'RAILWAY_DOCKERFILE_PATH=Dockerfile.worker',

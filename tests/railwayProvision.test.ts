@@ -36,6 +36,15 @@ describe('provisioning building blocks', () => {
     expect(args.join(' ')).not.toContain('ANTHROPIC_API_KEY=');
   });
 
+  it('deploys WITHOUT an AI credential — the environment ships, the brain key comes later', () => {
+    const args = provisionVariableArgs({ ...INPUTS, ai: null });
+    const joined = args.join(' ');
+    expect(joined).toContain('CREATOROS_API_KEY=');
+    expect(joined).toContain('KAIROS_WORKER_TOKEN=');
+    expect(joined).not.toContain('ANTHROPIC_API_KEY=');
+    expect(joined).not.toContain('CLAUDE_CODE_OAUTH_TOKEN=');
+  });
+
   it('parses the generated domain and service id from CLI output', () => {
     expect(parseDomain('Service Domain created:\nhttps://kairos-worker-production.up.railway.app\n')).toBe(
       'https://kairos-worker-production.up.railway.app',
