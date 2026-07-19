@@ -30,9 +30,9 @@ export default {
     const sendBtn = h('button', { class: 'btn btn-primary', onclick: () => send() }, 'Send');
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
 
-    // The CreatorOS mark is the thinking icon — shown still, no animation;
-    // the ticking seconds are what say "working".
-    const logo = (size) => h('img', { src: '/assets/creatoros-logo.png', alt: '', style: `width:${size}px;height:${size}px;object-fit:contain` });
+    // The CreatorOS mark is the thinking icon — rotating steadily while
+    // the agent works. No pulsing.
+    const logo = (size) => h('img', { class: 'spinner-logo', src: '/assets/creatoros-logo.png', alt: '', style: `width:${size}px;height:${size}px` });
     let think = null;
     let thinkTimer = null;
     const startThinking = () => {
