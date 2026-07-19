@@ -156,6 +156,19 @@ textarea.input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fo
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* The CreatorOS logo IS the thinking icon — every loading/thinking state
+   in the UI pulses the mark instead of a generic ring. */
+.spinner-logo {
+  width: 22px; height: 22px; object-fit: contain;
+  animation: logo-pulse 1.15s ease-in-out infinite;
+}
+@keyframes logo-pulse {
+  50% { transform: scale(0.8) rotate(-8deg); opacity: 0.6; }
+}
+.chat-thinking {
+  display: flex; align-items: center; gap: 9px;
+  color: var(--text-4); font-size: 13px; margin: 12px 0;
+}
 
 /* --------------------------------------------------------------------------
    App shell: sidebar + main column

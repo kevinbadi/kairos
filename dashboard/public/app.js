@@ -199,8 +199,9 @@ async function show() {
   if (cached) {
     try { paint(JSON.parse(cached)); } catch { /* fall through to spinner */ }
   } else {
-    // No pop-in: a single full-page spinner until the fetch settles.
-    main.replaceChildren(h('div', { class: 'page-loading' }, h('div', { class: 'spinner' })));
+    // No pop-in: the CreatorOS mark pulses until the fetch settles.
+    main.replaceChildren(h('div', { class: 'page-loading' },
+      h('img', { class: 'spinner-logo', src: '/assets/creatoros-logo.png', alt: '', style: 'width:44px;height:44px' })));
   }
   try {
     const fresh = await panel.fetchData(ctx);

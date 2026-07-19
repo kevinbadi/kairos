@@ -295,4 +295,15 @@ describe('dashboard UI shell', () => {
       expect(registry).toContain(`./${panel}.js`);
     }
   });
+
+  it('the CreatorOS mark is the thinking icon everywhere', async () => {
+    const pub = join(process.cwd(), 'dashboard', 'public');
+    const { stat } = await import('node:fs/promises');
+    expect((await stat(join(pub, 'assets', 'creatoros-logo.png'))).size).toBeGreaterThan(0);
+    const appJs = await readFile(join(pub, 'app.js'), 'utf8');
+    const chatJs = await readFile(join(pub, 'panels', 'chat.js'), 'utf8');
+    const indexHtml = await readFile(join(pub, 'index.html'), 'utf8');
+    for (const src of [appJs, chatJs, indexHtml]) expect(src).toContain('creatoros-logo.png');
+    expect(chatJs).toContain('kai is thinking');
+  });
 });

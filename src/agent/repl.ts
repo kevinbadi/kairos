@@ -23,7 +23,10 @@ const BOLD = '\x1b[1m';
 const CYAN = '\x1b[38;2;0;229;255m';
 const AMBER = '\x1b[38;2;255;176;0m';
 const SILVER = '\x1b[38;2;203;213;225m';
-const FRAMES = ['✳', '✶', '✻', '✽', '✻', '✶'];
+// The thinking icon is the CreatorOS mark — a play-button. Terminals
+// can't render the PNG the dashboard uses, so the glyph pulses instead:
+// outline → filled → outline, in the brand cyan.
+const FRAMES = ['▹', '▸', '▶', '▸'];
 
 const BANNER = `
   ██╗  ██╗ █████╗ ██╗██████╗  ██████╗ ███████╗
@@ -98,7 +101,7 @@ class Spinner {
     const seconds = Math.floor((Date.now() - this.startedAt) / 1000);
     const frame = FRAMES[this.frame++ % FRAMES.length];
     process.stdout.write(
-      `\r\x1b[2K${AMBER}${frame}${RESET} ${this.label} ${DIM}(${seconds}s · esc to interrupt)${RESET}`,
+      `\r\x1b[2K${CYAN}${frame}${RESET} ${this.label} ${DIM}(${seconds}s · esc to interrupt)${RESET}`,
     );
   }
 
@@ -167,8 +170,9 @@ export class HatchSpinner implements TurnSpinner {
     const seconds = Math.floor((Date.now() - this.startedAt) / 1000);
     const stage = [...HatchSpinner.STAGES].reverse().find((s) => seconds >= s.after)!;
     const star = FRAMES[this.frame++ % FRAMES.length];
+    // The CreatorOS mark incubating inside the shell — cyan, like the logo.
     process.stdout.write(
-      `\r\x1b[2K${DIM}${stage.shell[0]}${RESET} ${AMBER}${star}${RESET} ${DIM}${stage.shell[1]}${RESET} ${stage.label}… ${DIM}(${seconds}s)${RESET}`,
+      `\r\x1b[2K${DIM}${stage.shell[0]}${RESET} ${CYAN}${star}${RESET} ${DIM}${stage.shell[1]}${RESET} ${stage.label}… ${DIM}(${seconds}s)${RESET}`,
     );
   }
 
@@ -183,7 +187,7 @@ export class HatchSpinner implements TurnSpinner {
       clearInterval(this.timer);
       this.timer = null;
       process.stdout.write(
-        `\r\x1b[2K${AMBER}✧ ✻ ✧${RESET}  ${BOLD}hatched${RESET} ${DIM}— your CreatorOS agent is born.${RESET}\n\n\x1b[?25h`,
+        `\r\x1b[2K${CYAN}✧ ▶ ✧${RESET}  ${BOLD}hatched${RESET} ${DIM}— your CreatorOS agent is born.${RESET}\n\n\x1b[?25h`,
       );
     }
   }

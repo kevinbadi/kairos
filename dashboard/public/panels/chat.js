@@ -30,13 +30,35 @@ export default {
     const sendBtn = h('button', { class: 'btn btn-primary', onclick: () => send() }, 'Send');
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
 
+    // The CreatorOS mark is the thinking icon — it pulses with a timer
+    // until the first sign of life from the agent, CLI-style.
+    const logo = (size) => h('img', { class: 'spinner-logo', src: '/assets/creatoros-logo.png', alt: '', style: `width:${size}px;height:${size}px` });
+    let think = null;
+    let thinkTimer = null;
+    const startThinking = () => {
+      const secs = h('span', {}, '0s');
+      think = h('div', { class: 'chat-thinking' }, logo(20), h('span', {}, 'kai is thinking…'), secs);
+      scroll.append(think);
+      scroll.scrollTop = scroll.scrollHeight;
+      const startedAt = Date.now();
+      thinkTimer = setInterval(() => {
+        if (!think || !think.isConnected) { clearInterval(thinkTimer); return; }
+        secs.textContent = `${Math.floor((Date.now() - startedAt) / 1000)}s`;
+      }, 500);
+    };
+    const stopThinking = () => {
+      if (thinkTimer) { clearInterval(thinkTimer); thinkTimer = null; }
+      if (think) { think.remove(); think = null; }
+    };
+
     async function send() {
       const message = input.value.trim();
       if (!message || busy) return;
       input.value = '';
       busy = true;
-      sendBtn.replaceChildren(h('div', { class: 'spinner', style: 'width:16px;height:16px;border-width:2px' }));
+      sendBtn.replaceChildren(logo(18));
       push('chat-msg user', message);
+      startThinking();
       try {
         const res = await fetch('/api/chat', {
           method: 'POST',
@@ -57,6 +79,7 @@ export default {
             if (!line) continue;
             let ev;
             try { ev = JSON.parse(line); } catch { continue; }
+            if (ev.type !== 'init') stopThinking(); // first sign of life
             if (ev.type === 'init') sessionId = ev.sessionId;
             else if (ev.type === 'text') push('chat-msg agent', ev.text.trim());
             else if (ev.type === 'tool') push('chat-tool', `⏺ ${ev.name}(${(ev.args || '{}').slice(1, -1)})`);
@@ -67,6 +90,7 @@ export default {
       } catch (error) {
         push('chat-tool result', `⎿ connection lost: ${error.message}`);
       }
+      stopThinking();
       busy = false;
       sendBtn.replaceChildren('Send');
       input.focus();
