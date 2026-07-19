@@ -51,6 +51,7 @@ import {
   funnelFlows,
   cronFlows,
   mergeRuns,
+  scopeToProfile,
   type FlowRun,
   type FlowStats,
   type LiveFunnel,
@@ -235,9 +236,16 @@ async function fetchCloudState(session: Session): Promise<NonNullable<typeof clo
   const funnels: LiveFunnel[] = [];
   const statsById = new Map<string, FlowStats>();
   const runs: FlowRun[] = [];
-  if (session.client) {
+  // The key is account-wide; the workspace owns exactly ONE profile. No
+  // configured profile → no cloud fetch at all — an unscoped list would
+  // surface automations from the user's other projects (seen in the wild).
+  const profileId = session.config?.profileId;
+  if (session.client && profileId) {
     try {
-      const raw = asArray(await session.client.listCommentAutomations(session.config?.profileId));
+      const raw = scopeToProfile(
+        asArray(await session.client.listCommentAutomations(profileId)),
+        profileId,
+      );
       for (const item of raw.slice(0, 5)) {
         const id = str(item._id) ?? str(item.id);
         if (!id) continue;
@@ -324,6 +332,8 @@ async function automationsPayload(session: Session): Promise<unknown> {
 
   return {
     connected: session.client !== null,
+    // Cloud flows are hidden (not fetched) until onboarding links a profile.
+    cloudScoped: Boolean(config?.profileId),
     flows,
     runs: mergeRuns(localRuns, [...cloud.runs, ...workerFlowRuns(worker.runs)]),
     crons: { ok: cronListCache.ok, output: cronListCache.output },

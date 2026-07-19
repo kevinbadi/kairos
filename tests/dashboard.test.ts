@@ -177,6 +177,19 @@ describe('automation flows (n8n-style)', () => {
     expect(flowHealth(false, healthy)).toBe('off');
   });
 
+  it('scopes account-wide API results to the workspace profile — other projects never show', async () => {
+    const { scopeToProfile } = await import('../src/dashboard/flows.js');
+    const items = [
+      { id: 'mine-string', profileId: 'p1' },
+      { id: 'mine-object', profileId: { _id: 'p1' } },
+      { id: 'danny-reel', profileId: 'p2' },          // another project on the same account
+      { id: 'danny-roast', profileId: { _id: 'p9' } },
+      { id: 'undeclared', },                           // no profileId field — trusted (query was scoped)
+    ];
+    const scoped = scopeToProfile(items, 'p1');
+    expect(scoped.map((i) => i.id)).toEqual(['mine-string', 'mine-object', 'undeclared']);
+  });
+
   it('merges cloud and local runs newest-first', async () => {
     const { mergeRuns } = await import('../src/dashboard/flows.js');
     const merged = mergeRuns(
