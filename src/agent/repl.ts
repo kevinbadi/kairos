@@ -330,7 +330,17 @@ function readUserInput(): Promise<string | null> {
       stdin.off('data', onData);
       stdin.setRawMode(wasRaw);
       stdin.pause();
-      out.write('\x1b[1B\r\n'); // step below the bottom rule
+      // The input widget never joins the feed: wipe all three rows (top
+      // rule, input, bottom rule), then echo the sent message as a plain
+      // feed line — Claude Code style. The bar redraws fresh at the
+      // bottom on the next readUserInput.
+      out.write('\x1b[1A\r\x1b[J');
+      const sent = result?.trim();
+      if (sent) {
+        const lines = wrapLine(sent, chatWidth());
+        out.write(`${BOLD}${CYAN}❯${RESET} ${DIM}${lines[0] ?? ''}${RESET}\n`);
+        for (const line of lines.slice(1)) out.write(`  ${DIM}${line}${RESET}\n`);
+      }
       resolve(result);
     };
 
@@ -357,7 +367,6 @@ function readUserInput(): Promise<string | null> {
             i++;
             continue;
           }
-          redraw();
           finish(buffer);
           return;
         }
