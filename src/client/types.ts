@@ -114,6 +114,15 @@ export interface CreatePostBody {
   isDraft?: boolean;
   /** IANA timezone name, e.g. America/New_York. Defaults to UTC. */
   timezone?: string;
+  /**
+   * Queue scheduling: profile id — without scheduledFor, the post is
+   * auto-assigned to the profile's next available queue slot. Never fetch
+   * /v1/queue/next-slot and paste it into scheduledFor (bypasses queue
+   * locking); pass this field and let the server assign.
+   */
+  queuedFromProfile?: string;
+  /** A specific queue under queuedFromProfile (optional). */
+  queueId?: string;
   tags?: string[];
   hashtags?: string[];
   metadata?: Record<string, unknown>;

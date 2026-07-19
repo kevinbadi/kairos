@@ -100,7 +100,7 @@ export function buildToolRegistry(
     // ---- Posting ----
     t(
       'create_post',
-      'Create a post across one or many accounts (multiposting = several platform entries in one call). Supports shortform/longform video, carousels, text posts, native threads (threadItems), scheduling (scheduledFor + timezone; CreatorOS servers publish), drafts, and publishNow. Verify with get_post afterwards.',
+      'Create a post across one or many accounts (multiposting = several platform entries in one call). Supports shortform/longform video, carousels, text posts, native threads (threadItems). Scheduling schema, exactly one mode per call: (1) scheduledFor + timezone = exact time, CreatorOS servers publish; (2) queuedFromProfile (+ optional queueId) = auto-assigned to the profile\'s next queue slot; (3) publishNow = immediate. NONE of the three → the post saves as a DRAFT automatically. Per-platform scheduledFor entries override the root time. Verify with get_post afterwards.',
       {
         content: z.string().optional().describe('Caption / body text'),
         title: z.string().optional().describe('YouTube title (≤100 chars)'),
@@ -110,6 +110,8 @@ export function buildToolRegistry(
         timezone: z.string().optional().describe('IANA name; defaults to the configured timezone'),
         publishNow: z.boolean().optional(),
         isDraft: z.boolean().optional(),
+        queuedFromProfile: z.string().optional().describe('Profile id — queue mode: server assigns the next available slot; never compute the slot yourself'),
+        queueId: z.string().optional().describe('Specific queue under queuedFromProfile'),
         tags: z.array(z.string()).optional().describe('YouTube tags'),
         hashtags: z.array(z.string()).optional(),
       },

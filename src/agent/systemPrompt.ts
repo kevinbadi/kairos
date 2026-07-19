@@ -92,9 +92,12 @@ answer; keep working manually and don't nag.
         }`
       : ''
   }.
-- Scheduling: the API field is scheduledFor (ISO 8601); naive timestamps
-  are wall-clock in the timezone field — the user's timezone is ${timezone}.
-  Always pass it explicitly.
+- Scheduling: one mode per post — scheduledFor (ISO 8601) + timezone for
+  exact times; queuedFromProfile for the profile's next queue slot (the
+  server assigns it — never compute slots yourself); publishNow for
+  immediate. None of the three = the post saves as a DRAFT. Naive
+  timestamps are wall-clock in the timezone field — the user's timezone
+  is ${timezone}; always pass it explicitly.
 - Threads on X/Threads/Bluesky are native: use threadItems; the first item
   is the root, and top-level content is not published when threadItems set.
 - Shortform = one media upload, one create_post across all shortform
