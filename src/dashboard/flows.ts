@@ -96,7 +96,9 @@ export function engagementFlows(config: KairosConfig | null, entries: ActivityEn
   const origin: FlowOrigin = config?.automationTarget === 'railway' ? 'railway' : 'local';
   const persona = config?.engagementAgent?.persona ?? null;
   const personaSub = persona ? (persona.length > 42 ? `${persona.slice(0, 39)}…` : persona) : 'no persona set yet';
-  const escalate = config?.autoReplies?.comments.escalate ?? config?.autoReplies?.messages.escalate ?? [];
+  // Partial hand-edited configs happen — a messages-only autoReplies must
+  // never 500 the automations API. Optional chain every leaf.
+  const escalate = config?.autoReplies?.comments?.escalate ?? config?.autoReplies?.messages?.escalate ?? [];
   const flows: Flow[] = [];
 
   const comments = config?.autoReplies?.comments;
@@ -108,14 +110,14 @@ export function engagementFlows(config: KairosConfig | null, entries: ActivityEn
       origin,
       enabled: Boolean(comments?.enabled),
       nodes: [
-        { kind: 'trigger', icon: '⚡', label: 'New comment', sub: comments?.platforms.join(', ') || 'no platforms yet' },
+        { kind: 'trigger', icon: '⚡', label: 'New comment', sub: comments?.platforms?.join(', ') || 'no platforms yet' },
         { kind: 'action', icon: '✦', label: 'Reply in persona', sub: personaSub },
         { kind: 'filter', icon: '⚑', label: 'Escalation gate', sub: escalate.length ? escalate.join(', ') : 'defaults' },
         { kind: 'outcome', icon: '➤', label: 'Reply posted' },
       ],
       stats,
       health: flowHealth(Boolean(comments?.enabled), stats),
-      detail: config?.autoReplies?.comments.tone ?? undefined,
+      detail: config?.autoReplies?.comments?.tone ?? undefined,
     });
   }
 
@@ -128,14 +130,14 @@ export function engagementFlows(config: KairosConfig | null, entries: ActivityEn
       origin,
       enabled: Boolean(messages?.enabled),
       nodes: [
-        { kind: 'trigger', icon: '⚡', label: 'New DM', sub: messages?.platforms.join(', ') || 'no platforms yet' },
+        { kind: 'trigger', icon: '⚡', label: 'New DM', sub: messages?.platforms?.join(', ') || 'no platforms yet' },
         { kind: 'action', icon: '✦', label: 'Reply in persona', sub: personaSub },
         { kind: 'filter', icon: '⚑', label: 'Escalation gate', sub: escalate.length ? escalate.join(', ') : 'defaults' },
         { kind: 'outcome', icon: '➤', label: 'Message sent' },
       ],
       stats,
       health: flowHealth(Boolean(messages?.enabled), stats),
-      detail: config?.autoReplies?.messages.tone ?? undefined,
+      detail: config?.autoReplies?.messages?.tone ?? undefined,
     });
   }
 

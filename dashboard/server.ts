@@ -126,6 +126,30 @@ async function loadSession(workspaceRoot: string): Promise<Session> {
   return { workspaceRoot, client, config, brain };
 }
 
+/**
+ * Config read once at boot goes stale the moment onboarding or the agent
+ * writes kairos.json (worker.url added after boot → "unreachable forever"
+ * until restart). It's a tiny local file — re-read it per request, 3s TTL.
+ */
+let sessionRefreshedAt = 0;
+async function refreshSession(session: Session): Promise<void> {
+  if (Date.now() - sessionRefreshedAt < 3_000) return;
+  sessionRefreshedAt = Date.now();
+  try {
+    const paths = kairosPaths(session.workspaceRoot);
+    const config = existsSync(paths.configJson) ? await loadConfig(paths.configJson) : null;
+    const brainChanged = JSON.stringify(config?.brain) !== JSON.stringify(session.config?.brain);
+    session.config = config;
+    if (brainChanged) session.brain = await hydrateBrain(config?.brain ?? undefined);
+    if (!session.client) {
+      const apiKey = await resolveApiKey();
+      if (apiKey) session.client = new CreatorOSClient({ apiKey });
+    }
+  } catch {
+    // a malformed config mid-edit keeps the last good session
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* /api/health — "is my agent working?" in one payload                 */
 /* ------------------------------------------------------------------ */
@@ -178,8 +202,8 @@ async function healthPayload(session: Session): Promise<unknown> {
   const lastAction = entries[0] ?? null;
   const automationsOn = Boolean(
     session.config?.funnel?.enabled ||
-      session.config?.autoReplies?.comments.enabled ||
-      session.config?.autoReplies?.messages.enabled,
+      session.config?.autoReplies?.comments?.enabled ||
+      session.config?.autoReplies?.messages?.enabled,
   );
   const silentMs = lastAction ? Date.now() - Date.parse(lastAction.ts) : null;
 
@@ -420,7 +444,7 @@ async function understandingPayload(session: Session): Promise<unknown> {
           objectiveLabel: objective?.label ?? null,
           drives: objective?.drives ?? null,
           objectiveDetail: engagement.objectiveDetail ?? null,
-          tone: config?.autoReplies?.comments.tone ?? config?.autoReplies?.messages.tone ?? null,
+          tone: config?.autoReplies?.comments?.tone ?? config?.autoReplies?.messages?.tone ?? null,
         }
       : null,
     brand,
@@ -435,7 +459,7 @@ async function understandingPayload(session: Session): Promise<unknown> {
             link: config.funnel.link ?? null,
           }
         : null,
-      escalate: config?.autoReplies?.comments.escalate ?? config?.autoReplies?.messages.escalate ?? [],
+      escalate: config?.autoReplies?.comments?.escalate ?? config?.autoReplies?.messages?.escalate ?? [],
     },
     kpis: deriveKpis(config, summary),
     mission: MISSION_PILLARS,
@@ -662,6 +686,9 @@ export async function startDashboard(
     const route = `${req.method} ${url.pathname}`;
 
     const handle = async (): Promise<void> => {
+      // Pick up config changes (worker.url after provisioning, etc.)
+      // without a restart.
+      if (url.pathname.startsWith('/api/')) await refreshSession(session);
       // ---- JSON API ----
       if (route === 'GET /api/health') return json(res, 200, await healthPayload(session));
       if (route === 'GET /api/activity') {

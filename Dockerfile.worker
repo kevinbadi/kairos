@@ -22,5 +22,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY . .
 
 ENV NODE_ENV=production
+# The container runs as root, and Claude refuses unattended
+# bypassPermissions as root by design (exit 1 on every scheduled run).
+# IS_SANDBOX=1 tells it this is an isolated container — required.
+ENV IS_SANDBOX=1
 EXPOSE 8790
 CMD ["npx", "tsx", "src/worker/index.ts"]

@@ -59,6 +59,23 @@ describe('worker state fetch degrades, never breaks', () => {
   });
 });
 
+describe('partial configs never crash the flow view', () => {
+  it('a messages-only autoReplies renders both engagement flows', async () => {
+    const { engagementFlows } = await import('../src/dashboard/flows.js');
+    const config = {
+      version: 1 as const,
+      automationTarget: 'railway' as const,
+      timezone: 'UTC',
+      // hand-edited config: comments block missing entirely
+      autoReplies: { messages: { enabled: true, platforms: ['instagram'], escalate: ['refunds'] } },
+    };
+    const flows = engagementFlows(config as never, []);
+    expect(flows).toHaveLength(2);
+    expect(flows.find((f) => f.id === 'reply-to-messages')?.enabled).toBe(true);
+    expect(flows.find((f) => f.id === 'reply-to-comments')?.enabled).toBe(false);
+  });
+});
+
 describe('railway deploy status', () => {
   it('parses the deployments query response', async () => {
     const impl = vi.fn(async () =>

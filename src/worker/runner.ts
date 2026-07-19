@@ -85,6 +85,9 @@ export async function runSkillHeadless(opts: HeadlessRunOptions): Promise<RunOut
   let finalText = '';
   let resultError: string | null = null;
   let timedOut = false;
+  // "process exited with code 1" alone turns a 30-second diagnosis into
+  // archaeology — keep the child's stderr and attach it to the failure.
+  let stderrTail = '';
 
   try {
     const turn = query({
@@ -96,6 +99,9 @@ export async function runSkillHeadless(opts: HeadlessRunOptions): Promise<RunOut
         allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'WebSearch', 'WebFetch', 'TodoWrite'],
         cwd: opts.workspaceRoot,
         env,
+        stderr: (data: string) => {
+          stderrTail = (stderrTail + data).slice(-2000);
+        },
         ...(opts.model ? { model: opts.model } : brain.provider === 'custom' ? { model: brain.model } : {}),
       },
     });
@@ -127,7 +133,8 @@ export async function runSkillHeadless(opts: HeadlessRunOptions): Promise<RunOut
     return { ok: false, summary: finalText, error: `Run exceeded ${Math.round(timeoutMs / 60000)} minutes and was interrupted.`, retryable: false };
   }
   if (resultError) {
-    const clean = sanitize(resultError);
+    const stderrNote = stderrTail.trim() ? ` — stderr: ${stderrTail.trim().slice(-500)}` : '';
+    const clean = sanitize(resultError + stderrNote);
     return { ok: false, summary: finalText, error: clean, retryable: isTransientError(clean) };
   }
   return { ok: true, summary: finalText || 'Run completed (no report text).' };

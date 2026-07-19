@@ -132,25 +132,41 @@ export function renderRailwayGuide(opts: { timezone: string; workerToken: string
 One always-on service runs ALL your automations — your machine can be off.
 Ten minutes, one time. Every value below is already filled in for you.
 
-## 1. Create the service
+Deploy with the Railway CLI from THIS folder — a GitHub deploy can't work
+here, because your workspace (kairos/) is gitignored and never reaches
+GitHub. The CLI uploads the folder itself.
 
-1. railway.app → New Project → Deploy from GitHub repo → pick this repo.
-2. Service settings → Build → set **Dockerfile Path** to \`Dockerfile.worker\`.
+## 1. Create the project and set the variables
 
-## 2. Set the environment variables (Service → Variables)
+From this folder:
 
-| Variable | Value |
-|---|---|
-| \`CREATOROS_API_KEY\` | your CreatorOS API key (CreatorOS app → Settings → API Key) |
-| \`ANTHROPIC_API_KEY\` | your Anthropic key — OR use \`CLAUDE_CODE_OAUTH_TOKEN\` from \`claude setup-token\` to stay on your Claude plan |
-| \`KAIROS_WORKER_TOKEN\` | \`${opts.workerToken}\` (generated for you — already saved in kairos.json) |
-| \`TZ\` | \`${opts.timezone}\` (so "9am" means YOUR 9am) |
+\`\`\`
+npx -y @railway/cli login
+npx -y @railway/cli init --name kairos-worker
+npx -y @railway/cli variables \\
+  --set "CREATOROS_API_KEY=<your CreatorOS API key — CreatorOS app → Settings → API Key>" \\
+  --set "ANTHROPIC_API_KEY=<your Anthropic key — or set CLAUDE_CODE_OAUTH_TOKEN from claude setup-token instead>" \\
+  --set "KAIROS_WORKER_TOKEN=${opts.workerToken}" \\
+  --set "TZ=${opts.timezone}" \\
+  --set "RAILWAY_DOCKERFILE_PATH=Dockerfile.worker" \\
+  --skip-deploys
+\`\`\`
 
 Tip: if you're using a pay-per-use API key, a spend limit at console.anthropic.com → Billing → Limits caps the worker's AI bill. (A Claude plan token rides your plan — no separate bill.)
 
+## 2. Upload and deploy
+
+\`\`\`
+npx -y @railway/cli up --detach --no-gitignore
+\`\`\`
+
+\`--no-gitignore\` is REQUIRED — without it Railway drops gitignored files,
+and kairos/ (your config, skills, automations) is gitignored. The
+.railwayignore file keeps node_modules, .env, and logs out either way.
+
 ## 3. Expose and connect it
 
-1. Service → Settings → Networking → **Generate Domain**.
+1. \`npx -y @railway/cli domain\` — generates the public URL.
 2. Tell Kai in chat: "my worker is live at https://<that-domain>" — or paste it
    into \`kairos/kairos.json\` under \`worker.url\` yourself.
 3. Optional, for deploy status on the dashboard: set \`RAILWAY_API_TOKEN\` in the
@@ -159,8 +175,10 @@ Tip: if you're using a pay-per-use API key, a spend limit at console.anthropic.c
 ## 4. Verify
 
 Open the dashboard's Automations page — the "▲ Railway worker" strip should read
-**up · on schedule**. Automations you create in chat land in \`kairos/automations.json\`;
-the worker picks up changes within 30 seconds, no redeploy needed.
+**up · on schedule** (its /health should list your automations, not 0).
+Automations you create in chat land in \`kairos/automations.json\`; after changing
+them, sync the deployed worker with \`npx -y @railway/cli up --detach --no-gitignore\`
+— or just ask Kai to redeploy.
 `;
 }
 

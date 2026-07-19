@@ -1,10 +1,14 @@
-# What does NOT ship to Railway (`railway up` uploads everything else).
-# The Docker build runs npm ci itself — uploading node_modules (~350MB)
-# chokes the upload and buys nothing.
+# What does NOT ship to Railway. Deploys MUST use `railway up --no-gitignore`
+# (plain `railway up` silently drops gitignored files — and the gitignored
+# kairos/ IS the workspace). That makes this file the ONLY exclusion list,
+# so secrets and junk are listed here explicitly.
 node_modules
 .git
 logs
 creatoros
+deploy
+dist
+.env
 .DS_Store
 *.log
 

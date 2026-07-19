@@ -3,8 +3,11 @@
  * this so the user never touches railway.app beyond creating the account
  * and pasting a token. Drives the Railway CLI through `npx -y
  * @railway/cli` (no global install), uploads the LOCAL workspace with
- * `railway up` (gitignored kairos/ ships — a GitHub deploy would miss it),
- * and points the build at Dockerfile.worker via RAILWAY_DOCKERFILE_PATH.
+ * `railway up --no-gitignore` — plain `railway up` silently DROPS
+ * gitignored files, and kairos/ is gitignored, which ships a worker with
+ * no config/skills/automations. With --no-gitignore, .railwayignore is
+ * the only exclusion list, so it must carry secrets and junk itself.
+ * RAILWAY_DOCKERFILE_PATH points the build at Dockerfile.worker.
  *
  * Every step degrades to an honest error string — provisioning failure
  * never fails onboarding; the chat path (provision-railway skill) is the
@@ -56,7 +59,7 @@ export function provisionVariableArgs(inputs: ProvisionInputs): string[] {
  * node_modules (~350MB) chokes `railway up`. Everything else (src,
  * kairos/, templates/, content-library/) ships on purpose.
  */
-export const RAILWAY_IGNORE = 'node_modules\n.git\nlogs\ncreatoros\n.DS_Store\n*.log\n';
+export const RAILWAY_IGNORE = 'node_modules\n.git\nlogs\ncreatoros\ndeploy\ndist\n.env\n.DS_Store\n*.log\n';
 
 /** Make sure the upload manifest exists before any `railway up`. Best-effort — a slow upload beats a dead deploy. */
 export async function ensureRailwayIgnore(workspaceRoot: string): Promise<void> {
@@ -165,8 +168,10 @@ export async function provisionRailwayWorker(
   if (vars.code !== 0) return fail('railway variables', vars.stderr || vars.stdout);
 
   onProgress('Uploading this workspace and starting the build (a few minutes)…');
-  await ensureRailwayIgnore(root); // never upload node_modules/.git
-  const up = await runner(['up', '--detach'], root, token);
+  await ensureRailwayIgnore(root); // with --no-gitignore this is the ONLY exclusion list
+  // --no-gitignore is load-bearing: without it railway up drops gitignored
+  // files, and the gitignored kairos/ IS the workspace.
+  const up = await runner(['up', '--detach', '--no-gitignore'], root, token);
   if (up.code !== 0) return fail('railway up', up.stderr || up.stdout);
 
   onProgress('Generating the public domain…');

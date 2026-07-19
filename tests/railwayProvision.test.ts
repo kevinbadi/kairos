@@ -98,6 +98,9 @@ describe('provisionRailwayWorker orchestration (mocked CLI)', () => {
     expect(result.ok).toBe(true);
     // unlink comes before init — the stale link is gone before anything is created
     expect(calls.findIndex((a) => a[0] === 'unlink')).toBeLessThan(calls.findIndex((a) => a[0] === 'init'));
+    // --no-gitignore is load-bearing: plain `railway up` drops the
+    // gitignored kairos/ and ships a worker with no workspace.
+    expect(calls.find((a) => a[0] === 'up')).toContain('--no-gitignore');
   });
 
   it('REFUSES to deploy onto a mismatched project (stale link that will not clear)', async () => {

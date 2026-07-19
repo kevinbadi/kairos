@@ -1,6 +1,8 @@
 # provision-railway
 
-Build the user's Railway worker environment end to end: project, workspace upload, variables, public domain, health check. The user's only jobs were creating the Railway account and pasting an API token — everything else is yours. Uses the Railway CLI (`railway`), which uploads the LOCAL workspace directly (`railway up`) — no GitHub connection needed, and gitignored files like `kairos/` ship correctly.
+Build the user's Railway worker environment end to end: project, workspace upload, variables, public domain, health check. The user's only jobs were creating the Railway account and pasting an API token — everything else is yours. Uses the Railway CLI (`railway`), which uploads the LOCAL workspace directly — no GitHub connection needed.
+
+**Upload rule that bites: plain `railway up` silently DROPS gitignored files, and `kairos/` is gitignored — that deploys a worker with no config, no skills, no automations ("0 automations scheduled"). `.railwayignore` does NOT override `.gitignore`. Every upload must be `railway up --no-gitignore`, which makes `.railwayignore` the only exclusion list.**
 
 ## Before anything
 
@@ -20,8 +22,8 @@ Run from the workspace root:
    `railway variables --set "CREATOROS_API_KEY=…" --set "<workerAiKind>=<workerAiKey>" --set "KAIROS_WORKER_TOKEN=…" --set "TZ=<timezone>" --set "RAILWAY_DOCKERFILE_PATH=Dockerfile.worker"`
    The AI variable NAME comes from `workerAiKind` — a setup-token saved as `CLAUDE_CODE_OAUTH_TOKEN` must not be deployed as `ANTHROPIC_API_KEY`.
    `RAILWAY_DOCKERFILE_PATH` is what makes Railway build from `Dockerfile.worker` instead of autodetecting.
-3. **Know what ships before uploading.** Make sure `.railwayignore` exists in the workspace root with at least: `node_modules`, `.git`, `logs`, `creatoros` — the Docker build runs `npm ci` itself, and uploading node_modules (~350MB) chokes `railway up`. What DOES ship, on purpose: `src/` + package files + `Dockerfile.worker` (the code), `kairos/` (config, skills, automations.json), `templates/`, and `content-library/` (media the posting automations publish — if it's huge, warn the human that every deploy re-uploads it).
-4. `railway up --detach` — uploads this workspace and builds. Watch with `railway logs --build` until the build succeeds; on failure, read the error, fix, re-up.
+3. **Know what ships before uploading.** With `--no-gitignore`, `.railwayignore` is the ONLY exclusion list — make sure it exists in the workspace root with at least: `node_modules`, `.git`, `logs`, `creatoros`, `deploy`, `dist`, `.env` (the Docker build runs `npm ci` itself; a ~350MB node_modules upload chokes; `.env` must never ship). What DOES ship, on purpose: `src/` + package files + `Dockerfile.worker` (the code), `kairos/` (config, skills, automations.json — gitignored, which is exactly why `--no-gitignore` is required), `templates/`, and `content-library/` (media the posting automations publish — if it's huge, warn the human that every deploy re-uploads it).
+4. `railway up --detach --no-gitignore` — uploads this workspace and builds. Watch with `railway logs --build` until the build succeeds; on failure, read the error, fix, re-up. After the deploy, sanity-check the worker actually got the workspace: `/health` should list the expected automations, not 0.
 5. `railway domain` — generates the public URL. Capture it.
 6. `railway status --json` — capture the service id.
 7. Save to `kairos/kairos.json`: `worker.url` (the domain, with https://), and `railway.serviceId`. `worker.token` should already be there — if not, set it to the KAIROS_WORKER_TOKEN you deployed.
@@ -37,4 +39,4 @@ Run from the workspace root:
 
 ## Verification
 
-`/health` responding with the schedule is the finish line — then open the loop: automations picked in chat land in `kairos/automations.json`, and the deployed worker picks up file changes only at the NEXT deploy (`railway up`) unless a volume is mounted — so after changing automations, run `railway up --detach` again, or tell the human "redeploy to sync" in your report. Confirm the dashboard's Automations page shows the worker strip as up. Report: project name, domain, variables set (names only), and the verified health line.
+`/health` responding with the schedule is the finish line — then open the loop: automations picked in chat land in `kairos/automations.json`, and the deployed worker picks up file changes only at the NEXT deploy unless a volume is mounted — so after changing automations, run `railway up --detach --no-gitignore` again, or tell the human "redeploy to sync" in your report. Confirm the dashboard's Automations page shows the worker strip as up. Report: project name, domain, variables set (names only), and the verified health line.
