@@ -1,7 +1,9 @@
 /**
  * Entry point. npm forwards positional args to the start script:
  *   npm start creatoros kairos   (alias: npm start creatoros kai)
- * First run (no kairos/ setup): the onboarding interview.
+ * First run (no kairos/ setup): the onboarding interview — a pure form, no
+ * AI in it. Finishing writes the workspace (CLAUDE.md + kairos/) and hands
+ * the user an initialization prompt for whatever agent chat they open.
  * Every later run: load the saved setup and enter the Kairos REPL.
  * Setup is resumable — killing the process mid-interview and re-running
  * resumes where it left off.
@@ -67,15 +69,18 @@ async function main(): Promise<void> {
       await showIntro();
     }
     const { runInterview } = await import('./onboarding/interview.js');
-    const { client, config } = await runInterview(paths.root);
-    const { runRepl } = await import('./agent/repl.js');
-    console.log("\nSetup complete. You're talking to Kai now — try \"how do my socials look?\"");
+    await runInterview(paths.root);
+    // The form is done and the workspace is on disk — the harness's job
+    // ends here. No agent launches from onboarding: the user opens their
+    // own chat(s) and sends the initialization prompt.
     console.log(
-      '\x1b[2mTip: run `npm link` once in this repo and `kai` opens a session from any terminal. ' +
-        'Each terminal is its own conversation; they all share this workspace.\x1b[0m',
+      '\nOnboarding complete. Your workspace is initialized — CLAUDE.md and kairos/ are written.',
     );
-    // First prompt hatches the agent — the cold start becomes the birth.
-    await runRepl(client, config, paths.root, { justOnboarded: true });
+    console.log(
+      'Open an agent chat in this folder (`claude`, or `kai` for the built-in one) and send the prompt from\n' +
+        'kairos/SETUP_PROMPT.md — the agent initializes everything from there. Sessions share this workspace,\n' +
+        'so spin up as many in parallel as you like.',
+    );
     return;
   }
 

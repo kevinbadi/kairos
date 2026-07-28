@@ -4,8 +4,6 @@
  * Kairos reads forever after. Resumable: state saves after every step.
  */
 import { confirm, input, password, select } from '@inquirer/prompts';
-import { detectBrain, type BrainConfig } from '../util/brain.js';
-import { promptBrainChoice, toSettings, verifyBrainInteractive } from '../config/brainSetup.js';
 import { cp, mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -24,7 +22,6 @@ import {
   saveApiKey,
   saveCredentials,
   saveRailwayToken,
-  saveWorkerAiCredential,
 } from '../config/credentials.js';
 import { provisionRailwayWorker } from '../automations/railwayProvision.js';
 import { saveConfig, type KairosConfig } from '../config/kairosConfig.js';
@@ -40,6 +37,7 @@ import {
   describeWorkerHealth,
   parseProducts,
   renderBrandMd,
+  renderClaudeMd,
   renderProfilesMd,
   renderRailwayGuide,
   renderSetupPrompt,
@@ -69,15 +67,8 @@ export async function runInterview(root: string = process.cwd()): Promise<Interv
   say(
     resuming
       ? `Kai here — picking up where we left off. ${state.completed.length} step(s) already done.`
-      : "Hey — I'm Kai. I run your social presence on CreatorOS: posting at scale, automations, replies, analytics. Before I touch anything, brief me. This takes about five minutes and I'll remember all of it.",
+      : "Hey — I'm Kai. I run your social presence on CreatorOS: posting at scale, automations, replies, analytics. This form is just the briefing — no AI setup here, no API keys for a model. When it's done I write your whole workspace to disk (CLAUDE.md + kairos/), and you hand ANY agent chat the initialization prompt. About five minutes.",
   );
-
-  // ---- The brain — if the Claude connection fails, the FIRST question
-  // is which AI model to use (Claude SDK, or any OpenAI-compatible API).
-  if (!isStepDone(state, 'brain')) {
-    await stepBrain(state);
-    await saveState(paths.setupStateJson, state);
-  }
 
   // ---- Creator or agency ----
   if (!isStepDone(state, 'mode')) {
@@ -208,31 +199,6 @@ async function collectKeysInteractively(state: InterviewState): Promise<CreatorO
   state.answers.clientLabels = collected.map((entry) => entry.label);
   say(`Working on ${active.label} now. ${collected.length > 1 ? `The other ${collected.length - 1} key(s) are saved and validated.` : ''}`);
   return active.client;
-}
-
-/**
- * The brain check. Claude detected (plan login or ANTHROPIC_API_KEY) →
- * verify and move on. Claude connection failed → the first question of
- * the whole interview: which AI model — Claude, or any model behind an
- * Anthropic-compatible API. Every choice gets a live round-trip check.
- */
-async function stepBrain(state: InterviewState): Promise<void> {
-  let brain: BrainConfig;
-  const status = detectBrain();
-  if (status === 'missing') {
-    say("The Claude connection isn't there yet, so first things first:");
-    brain = await promptBrainChoice();
-  } else {
-    say(
-      status === 'plan'
-        ? 'AI brain: Claude Code detected — I run on your Claude plan, no API key needed.'
-        : 'AI brain: ANTHROPIC_API_KEY found — I think with Claude via that key.',
-    );
-    brain = { provider: 'claude' };
-  }
-  brain = await verifyBrainInteractive(brain);
-  state.answers.brain = toSettings(brain);
-  markStepDone(state, 'brain');
 }
 
 async function stepKey(paths: KairosPaths, state: InterviewState): Promise<CreatorOSClient> {
@@ -399,8 +365,8 @@ async function stepPathway(state: InterviewState, paths: KairosPaths): Promise<v
   say(
     'Cloud it is. The whole setup boils down to two keys that power the engine up there:\n' +
       '  1. Your CreatorOS key ✓ — already have it from a minute ago. That\'s how the worker posts and replies.\n' +
-      "  2. An AI key — the worker's brain. Your Claude login lives on this Mac and can't follow it into the cloud,\n" +
-      '     so the worker gets its own: an Anthropic API key, or a Claude plan token (from `claude setup-token`).',
+      "  2. An AI key — the worker's brain. NOT this form's business: after setup, your agent asks for it in chat\n" +
+      '     (an Anthropic API key, or a Claude plan token from `claude setup-token`) and installs it — no redeploy.',
   );
   say(
     "The building itself is my job, not yours. Create a Railway account (railway.app, the Hobby plan is fine), grab an API token at railway.app/account/tokens (an account token — a project-scoped one can't create new projects), and paste it here — in our first chat I'll assemble everything: project created, this workspace uploaded, both keys installed, live URL generated and health-checked.",
@@ -416,32 +382,6 @@ async function stepPathway(state: InterviewState, paths: KairosPaths): Promise<v
     say('Token saved securely to ~/.kairos (never into this repo).');
   }
 
-  // The cloud worker needs its own AI credential — the local Claude login
-  // doesn't travel. Collected now so the finish step can deploy hands-free.
-  let aiCredentialSaved = false;
-  if (railwayApiToken) {
-    const envKey = process.env.ANTHROPIC_API_KEY?.trim();
-    const aiChoice = await select({
-      message: 'Key #2 — the AI brain for the cloud worker:',
-      choices: [
-        ...(envKey ? [{ name: `Use the Anthropic key already in this shell (${maskKey(envKey)})`, value: 'env' as const }] : []),
-        { name: 'Anthropic API key (pay per use)', value: 'anthropic' as const },
-        { name: 'Claude plan token — run `claude setup-token` in another terminal (no separate bill, rides your Pro/Max plan)', value: 'oauth' as const },
-        { name: "Skip for now — the environment still deploys at the end of setup; the worker idles until you hand me a key in chat", value: 'skip' as const },
-      ],
-    });
-    if (aiChoice === 'env' && envKey) {
-      await saveWorkerAiCredential('ANTHROPIC_API_KEY', envKey);
-      aiCredentialSaved = true;
-    } else if (aiChoice === 'anthropic' || aiChoice === 'oauth') {
-      const value = (await password({ message: 'Paste it:', mask: '*' })).trim();
-      if (value) {
-        await saveWorkerAiCredential(aiChoice === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'CLAUDE_CODE_OAUTH_TOKEN', value);
-        aiCredentialSaved = true;
-        if (aiChoice === 'oauth') say('Plan token saved — the worker thinks on your Claude plan, no separate API bill.');
-      }
-    }
-  }
   const workerUrl = (
     await input({
       message: "Already have a Railway worker running? Paste its URL (blank — not yet, I'll build it):",
@@ -499,7 +439,6 @@ How it works once deployed: the worker re-reads kairos/automations.json every 30
     workerUrl: workerUrl || undefined,
     railwayServiceId: railwayServiceId || undefined,
     railwayTokenSaved: Boolean(railwayApiToken),
-    aiCredentialSaved,
   };
   markStepDone(state, 'pathway');
 }
@@ -527,9 +466,12 @@ async function stepFinish(
     const creatorosKey = await resolveApiKey();
     if (railwayToken && creatorosKey) {
       // The environment ALWAYS deploys at the end of onboarding — no
-      // automations required, no AI credential required. A missing brain
-      // key just means the worker idles until it's handed over in chat.
+      // automations required, no AI credential required. The form never
+      // asks for an AI key; one may still exist in ~/.kairos from a prior
+      // run, and a missing key just means the worker idles until the
+      // agent installs one in chat.
       const ai = (await resolveWorkerAiCredential()) ?? null;
+      if (ai && state.answers.pathway) state.answers.pathway.aiCredentialSaved = true;
       say('Building your Railway environment now — sit back, this is the part you never have to do.');
       const result = await provisionRailwayWorker(
         {
@@ -552,7 +494,7 @@ async function stepFinish(
         );
         if (!ai) {
           say(
-            'One thing missing: the worker has no AI key yet, so it idles (alive, but not thinking). Hand me one in chat — an Anthropic API key or a `claude setup-token` token — and I install it in seconds, no redeploy.',
+            'One thing missing, on purpose: the worker has no AI key yet, so it idles (alive, but not thinking). Hand one to your agent in chat — an Anthropic API key or a `claude setup-token` token — and it installs in seconds, no redeploy.',
           );
         } else if (ai.kind === 'ANTHROPIC_API_KEY') {
           say(
@@ -572,7 +514,9 @@ async function stepFinish(
   const config: KairosConfig = {
     version: 1,
     mode: state.answers.mode ?? 'creator',
-    brain: state.answers.brain ?? { provider: 'claude' },
+    // The form never asks about AI — the built-in `kai` chat defaults to
+    // Claude and reconfigures itself lazily on first launch if needed.
+    brain: { provider: 'claude' },
     automationTarget: pathway.automationTarget,
     timezone: pathway.timezone,
     profileId,
@@ -599,6 +543,11 @@ async function stepFinish(
     await writeFile(paths.tutorialsMd, renderTutorialsMd(), 'utf8');
   }
   await mkdir(paths.contentLibraryDir, { recursive: true });
+
+  // CLAUDE.md at the repo root — the briefing ANY agent opened in this
+  // folder reads automatically. This is what makes the handoff work: the
+  // form's answers live in files, so every parallel session starts primed.
+  await writeFile(paths.claudeMd, renderClaudeMd(state), 'utf8');
 
   // Deliberately no automations here: everyone runs a different playbook,
   // so nothing gets created on the user's behalf. The chat is where they
@@ -645,16 +594,20 @@ Want none of them? Also fine — everything works manually through chat too.`,
     "Honest read: the fastest lever from here is consistency — a full content-library/ and a daily posting automation beats any single viral swing. Drop 10+ clips into content-library/, then tell me \"schedule the week\" or pick your automations. That's my suggested first move.",
   );
 
-  // The handoff: everything answered is now materialized in kairos/ — this
-  // prompt makes an agent act on all of it. Saved AND printed.
+  // The handoff: everything answered is now materialized on disk — CLAUDE.md
+  // plus kairos/ — and this prompt makes an agent act on all of it. The form
+  // never touched an AI; the user's own agent chat takes it from here.
   const setupPrompt = renderSetupPrompt(state);
   await writeFile(
     join(paths.kairosDir, 'SETUP_PROMPT.md'),
-    `# Setup Prompt\n\nPaste this to Kai (or any agent in this repo) to wire everything up:\n\n\`\`\`\n${setupPrompt}\n\`\`\`\n`,
+    `# Initialization Prompt\n\nYour onboarding form is done and the workspace files are written. Open an agent\nchat in this folder — \`claude\`, \`kai\`, or any agent that reads CLAUDE.md — and\nsend this as your first message to get everything initialized:\n\n\`\`\`\n${setupPrompt}\n\`\`\`\n`,
     'utf8',
   );
   say(
-    `One last thing — your setup prompt (also saved to kairos/SETUP_PROMPT.md). Paste it as your first message and I'll wire everything up:\n\n${'─'.repeat(60)}\n${setupPrompt}\n${'─'.repeat(60)}`,
+    `You finished your onboarding form — everything you answered now lives on disk:
+  • CLAUDE.md — the briefing any agent in this folder reads automatically
+  • kairos/ — config, brand pack, profile map, skills, knowledge base
+Now send in this prompt to your AI agent and it'll go get everything initialized. Open a chat in this folder — \`claude\`, \`kai\`, whichever agent you run — paste it, and because setup lives in files (not in one chat), you can spin up as many parallel agent sessions as you like. It's also saved to kairos/SETUP_PROMPT.md:\n\n${'─'.repeat(60)}\n${setupPrompt}\n${'─'.repeat(60)}`,
   );
 
   // The dashboard is the home base — offer it running before the goodbye.

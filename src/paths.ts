@@ -7,6 +7,8 @@ import { join } from 'node:path';
  */
 export interface KairosPaths {
   root: string;
+  /** Repo-root CLAUDE.md — the generated briefing any agent chat reads. */
+  claudeMd: string;
   kairosDir: string;
   brandMd: string;
   profilesMd: string;
@@ -24,6 +26,7 @@ export function kairosPaths(root: string = process.cwd()): KairosPaths {
   const knowledgeDir = join(kairosDir, 'knowledge');
   return {
     root,
+    claudeMd: join(root, 'CLAUDE.md'),
     kairosDir,
     brandMd: join(kairosDir, 'BRAND.md'),
     profilesMd: join(kairosDir, 'PROFILES.md'),

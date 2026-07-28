@@ -16,19 +16,17 @@ The end state Kai drives toward: all four pillars on cron jobs — content posti
 ```sh
 # 1. Fork & clone. (No npm install needed — first start installs for you.)
 
-# 2. You need:
-#    - CreatorOS API key (CreatorOS iOS app → Settings → API Key, sk_...)
-#    - An AI brain, any of these works:
-#        · logged-in Claude Code (`claude`) — runs on your Claude plan (recommended)
-#        · export ANTHROPIC_API_KEY=...
-#        · any model behind an Anthropic-compatible API (Moonshot/Kimi,
-#          DeepSeek, GLM…) — Kai asks for base URL + model + key in setup
+# 2. All the form needs is your CreatorOS API key
+#    (CreatorOS iOS app → Settings → API Key, sk_...).
+#    No AI setup, no model keys — the form is a pure questionnaire.
 
 # 3. Go.
 npm start creatoros kairos     # alias: npm start creatoros kai
 ```
 
-**First run** is the onboarding interview — Kai collects your API key (masked, validated live), your brand pack, your profile map, your comments-to-DM funnel, auto-reply rules, and your automation pathway. Kill it any time; it resumes exactly where you left off.
+**First run** is the onboarding form — no AI in it. Kai collects your API key (masked, validated live), your brand pack, your profile map, and your automation pathway, then writes the whole workspace to disk: `CLAUDE.md` at the root plus `kairos/`. Finishing hands you an **initialization prompt** (also saved to `kairos/SETUP_PROMPT.md`) — open any agent chat in this folder (`claude`, the built-in `kai`, whichever agent you run) and send it; the agent initializes everything from there. Because setup lives in files, not in one chat, you can spin up as many parallel agent sessions as you like. Kill the form any time; it resumes exactly where you left off.
+
+For the agent chat itself you bring a brain: logged-in Claude Code (runs on your Claude plan, recommended), `ANTHROPIC_API_KEY`, or any model behind an Anthropic-compatible API (Moonshot/Kimi, DeepSeek, GLM…) — the built-in `kai` chat asks on first launch.
 
 **Every later run** drops you into the Kairos REPL:
 
@@ -125,7 +123,7 @@ During onboarding you pick a pathway (stored as `automationTarget` in `kairos/ka
 - **Local (macOS)** — crons run as launchd agent services on your machine. Free, private, but the machine must be awake at scheduled times.
 - **VPS (Railway)** — always-on cloud. The service needs `CREATOROS_API_KEY` and `ANTHROPIC_API_KEY` set, and — this matters — **set a spend limit in the Anthropic Console (console.anthropic.com → Billing → Limits) *before* deploying.** The service runs an agent unattended; an uncapped key is an uncapped bill. Kai will repeat this warning every time a deploy comes up. That's on purpose.
 
-Starter crons (offered at onboarding, one per pillar):
+Starter crons (onboarding sets up **zero** automations by design — your agent offers these in chat, one per pillar, and configures only what you approve):
 
 | Cron | Schedule | What happens |
 |---|---|---|

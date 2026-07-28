@@ -1,6 +1,9 @@
 # User artifacts — never committed (brand pack, profile map, configs, knowledge)
 kairos/
 
+# Generated at onboarding for the user's agent sessions — per-workspace, not repo docs
+/CLAUDE.md
+
 # CLI-compat workspace (skill shims for scheduled runs)
 creatoros/
 

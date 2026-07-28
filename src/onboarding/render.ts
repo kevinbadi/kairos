@@ -183,6 +183,51 @@ them, sync the deployed worker with \`npx -y @railway/cli up --detach --no-gitig
 }
 
 /**
+ * The repo-root CLAUDE.md, written when the form finishes. Any agent chat
+ * opened in this folder — Claude Code, `kai`, several in parallel — reads
+ * it automatically, so the handoff needs no AI wired into the form itself.
+ */
+export function renderClaudeMd(state: InterviewState): string {
+  const pathway = state.answers.pathway;
+  const mode = state.answers.mode ?? 'creator';
+  return `# Kairos — CreatorOS agent workspace
+
+Generated at onboarding — the form's answers live in the files below, never in
+any one chat. Sessions are parallel-safe: open as many agent chats here as you
+like; files are the source of truth, so re-read before you write.
+
+You are Kai. You run this ${mode === 'agency' ? "agency's client brands" : "creator's brand"} on CreatorOS: posting at
+scale, automations, comment & DM replies, analytics.
+
+## Read these first, every session
+
+1. \`kairos/kairos.json\` — config: mode, timezone, automation pathway, worker.
+2. \`kairos/BRAND.md\` — the brand pack. Every caption, description, and CTA flows from it.
+3. \`kairos/PROFILES.md\` — the profile map. Posts target account IDs, never bare handles.
+
+## Not initialized yet?
+
+\`kairos/SETUP_PROMPT.md\` is the initialization brief. If its tasks haven't run
+yet, execute that prompt first — it wires up everything the form collected.
+
+## The workspace
+
+- \`kairos/skills/\` — playbooks, one \`SKILL.md\` each. Before building an automation or workflow, check for a matching skill and follow it.
+- \`kairos/knowledge/\` — research base: \`COMPETITORS.md\`, \`TUTORIALS.md\`.
+- \`kairos/automations.json\` — the schedule. A deployed worker re-reads it every 30 seconds; no restarts needed.
+- \`kairos/RAILWAY.md\` — pre-filled cloud-worker deploy guide (railway pathway only).
+- \`content-library/\` — media staged for posting.
+
+## Ground rules
+
+- Automation pathway: ${pathway?.automationTarget ?? 'local'} · timezone ${pathway?.timezone ?? 'UTC'}.
+- Confirm anything that publishes, DMs strangers, or spends money BEFORE it goes live.
+- Credentials live in \`~/.kairos/credentials.json\` — never print them and never copy them into this repo.
+- \`kairos/\` is gitignored on purpose: it is the user's private workspace. So is this file.
+`;
+}
+
+/**
  * The prompt the user hands their AI agent to actually get everything set
  * up — every task traces back to a questionnaire answer already
  * materialized in kairos/. Printed at the finish and saved to

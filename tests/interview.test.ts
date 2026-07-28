@@ -12,7 +12,7 @@ import {
   INTERVIEW_STEPS,
   type InterviewState,
 } from '../src/onboarding/state.js';
-import { describeWorkerHealth, parseProducts, renderBrandMd, renderProfilesMd, renderRailwayGuide, renderSetupPrompt } from '../src/onboarding/render.js';
+import { describeWorkerHealth, parseProducts, renderBrandMd, renderClaudeMd, renderProfilesMd, renderRailwayGuide, renderSetupPrompt } from '../src/onboarding/render.js';
 
 async function tmpStatePath(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'kairos-test-'));
@@ -20,12 +20,11 @@ async function tmpStatePath(): Promise<string> {
 }
 
 describe('interview persistence & resume', () => {
-  it('starts with brain, mode, the CreatorOS key, then the infrastructure call — both keys before the rest of the form', () => {
+  it('starts with mode, then the CreatorOS key, then the infrastructure call — no AI step anywhere in the form', () => {
     const state = emptyState();
-    expect(nextStep(state)).toBe('brain');
-    expect(isInterviewComplete(state)).toBe(false);
-    markStepDone(state, 'brain');
+    expect(INTERVIEW_STEPS).not.toContain('brain');
     expect(nextStep(state)).toBe('mode');
+    expect(isInterviewComplete(state)).toBe(false);
     markStepDone(state, 'mode');
     expect(nextStep(state)).toBe('key');
     markStepDone(state, 'key');
@@ -37,10 +36,8 @@ describe('interview persistence & resume', () => {
   it('records agency mode with client labels but never the keys themselves', async () => {
     const path = await tmpStatePath();
     const state = emptyState();
-    state.answers.brain = { provider: 'custom', baseUrl: 'https://api.example/anthropic', model: 'some-model' };
     state.answers.mode = 'agency';
     state.answers.clientLabels = ['Acme Fitness', 'Bolt Coffee'];
-    markStepDone(state, 'brain');
     markStepDone(state, 'mode');
     await saveState(path, state);
     const { readFile } = await import('node:fs/promises');
@@ -57,7 +54,6 @@ describe('interview persistence & resume', () => {
     const state = emptyState();
     markStepDone(state, 'mode');
     markStepDone(state, 'key');
-    markStepDone(state, 'brain');
     markStepDone(state, 'brand');
     state.answers.brand = {
       about: 'Fitness coaching',
@@ -73,18 +69,19 @@ describe('interview persistence & resume', () => {
 
     // Simulate the process being killed and re-run.
     const resumed = await loadState(path);
-    expect(resumed.completed).toEqual(['mode', 'key', 'brain', 'brand']);
+    expect(resumed.completed).toEqual(['mode', 'key', 'brand']);
     expect(nextStep(resumed)).toBe('pathway');
     expect(resumed.answers.brand?.products[0]?.link).toBe('https://coach.example/buy');
   });
 
-  it('pathway follows the key (4th) and no automation setup steps exist in the form', () => {
+  it('pathway follows the key (3rd) and no automation or AI setup steps exist in the form', () => {
     expect(INTERVIEW_STEPS).not.toContain('funnel');
     expect(INTERVIEW_STEPS).not.toContain('autoReplies');
-    expect(INTERVIEW_STEPS.indexOf('key')).toBe(2);
-    expect(INTERVIEW_STEPS.indexOf('pathway')).toBe(3);
+    expect(INTERVIEW_STEPS).not.toContain('brain');
+    expect(INTERVIEW_STEPS.indexOf('key')).toBe(1);
+    expect(INTERVIEW_STEPS.indexOf('pathway')).toBe(2);
     const state = emptyState();
-    for (const step of ['brain', 'mode', 'key', 'pathway', 'brand', 'profiles'] as const) markStepDone(state, step);
+    for (const step of ['mode', 'key', 'pathway', 'brand', 'profiles'] as const) markStepDone(state, step);
     expect(nextStep(state)).toBe('finish');
   });
 
@@ -209,6 +206,25 @@ describe('brand pack rendering', () => {
     });
     expect(withWorker).not.toContain('kairos/RAILWAY.md');
     expect(withWorker).not.toContain('Provision my Railway worker');
+  });
+
+  it('CLAUDE.md briefs any agent: files first, init prompt, parallel-safe sessions, no secrets', () => {
+    const md = renderClaudeMd({
+      completed: [],
+      answers: {
+        mode: 'creator',
+        brand: { ...brand },
+        pathway: { automationTarget: 'railway', timezone: 'America/Toronto' },
+      },
+    });
+    expect(md).toContain('kairos/kairos.json');
+    expect(md).toContain('kairos/BRAND.md');
+    expect(md).toContain('kairos/PROFILES.md');
+    expect(md).toContain('kairos/SETUP_PROMPT.md');
+    expect(md).toContain('railway · timezone America/Toronto');
+    expect(md).toMatch(/parallel-safe/i);
+    expect(md).toMatch(/never print them/i);
+    expect(md).not.toMatch(/sk_[0-9a-f]/i); // never a key in a committed-adjacent file
   });
 
   it('describes a live worker in one human line', () => {

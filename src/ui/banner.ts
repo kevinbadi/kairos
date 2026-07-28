@@ -266,7 +266,7 @@ export async function showBrainLink(status: BrainStatus): Promise<void> {
         ? 'connected — thinking via your API key'
         : status === 'custom'
           ? 'connected — thinking via your configured model API'
-          : "not found yet — we'll pick your AI model in setup";
+          : 'not detected — fine: the setup form needs no AI; your agent chat comes after';
   if (!isFancy()) {
     console.log(`Claude: ${label}`);
     return;

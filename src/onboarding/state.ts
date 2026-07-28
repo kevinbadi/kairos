@@ -8,7 +8,9 @@ import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export const INTERVIEW_STEPS = [
-  'brain',
+  // No AI questions in the form — the interview only collects answers and
+  // materializes files (CLAUDE.md + kairos/). The user's own agent chat
+  // picks them up afterwards via the initialization prompt.
   'mode',
   // CreatorOS key first, then the infrastructure call — with both keys in
   // hand the finish step can provision Railway and light the dashboard up.
@@ -44,8 +46,6 @@ export interface InterviewState {
   /** Steps already completed, in order. */
   completed: InterviewStep[];
   answers: {
-    /** The AI brain: claude, or any Anthropic-compatible API (key stays in ~/.kairos). */
-    brain?: { provider: 'claude' | 'custom'; baseUrl?: string; model?: string };
     /** Is this an agency running client brands, or a creator? */
     mode?: 'creator' | 'agency';
     /** Agency client labels only — the keys themselves never land in the workspace. */
@@ -63,7 +63,11 @@ export interface InterviewState {
       railwayServiceId?: string;
       /** A Railway API token was saved to ~/.kairos — the agent can provision. */
       railwayTokenSaved?: boolean;
-      /** An AI credential for the cloud worker was saved — hands-free deploy possible. */
+      /**
+       * An AI credential for the cloud worker already exists in ~/.kairos
+       * (from a prior run or the shell env) — never collected by the form;
+       * the agent installs one in chat otherwise.
+       */
       aiCredentialSaved?: boolean;
     };
   };
